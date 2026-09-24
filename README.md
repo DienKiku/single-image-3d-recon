@@ -16,14 +16,12 @@
 - [Overview & Motivation](#overview--motivation)
 - [Key Features & Technical Innovations](#key-features--technical-innovations)
 - [System Architecture](#system-architecture)
-- [Empirical Benchmarks & Verification Case Studies](#empirical-benchmarks--verification-case-studies)
+- [Model Construction & Visual Validation Pipeline](#model-construction--visual-validation-pipeline)
 - [Installation & Environment Setup](#installation--environment-setup)
 - [Usage Guide](#usage-guide)
   - [Web GUI (Streamlit)](#1-web-gui-streamlit)
   - [Programmatic Python API](#2-programmatic-python-api)
 - [Directory Structure](#directory-structure)
-- [Future Research Directions](#future-research-directions)
-- [Pushing to GitHub](#pushing-to-github)
 - [Copyright & License](#copyright--license)
 
 ---
@@ -112,34 +110,52 @@ flowchart TD
 
 ---
 
-## Empirical Benchmarks & Verification Case Studies
+## Model Construction & Visual Validation Pipeline
 
-The pipeline has been rigorously verified against diverse real-world photographic test cases:
+To provide rigorous academic insights into the internal state representations and mathematical transformations of the reconstruction pipeline, the following sections document the visual stages captured during model synthesis:
 
-### Case Study 1: Ricoh IM C3000 Industrial Office Printer
-- **Source Photograph:** Oblique front-quarter view taken in an office environment with complex background walls.
-- **Reconstruction Metrics:**
-  - **Vertices:** 10,002
-  - **Faces:** 19,994 (Quadric Decimated to target 20,000)
-  - **Metric Dimensions:** $587.0 \times 1020.0 \times 685.0\text{ mm}$ (Aligned to manufacturer specification)
-  - **Solid Volume:** $74,377,210\text{ mm}^3$ (Fully enclosed watertight CAD volume)
-  - **Topology:** Complete 360° representation including scanner lid, control panel, paper exit tray, and base paper drawers.
+### Stage 1: Salient Object Segmentation & Canvas Normalization
+The system first isolates the target physical object from unconstrained, cluttered real-world photographic backgrounds using a deep salient boundary network (**U2-Net**). The extracted alpha matte is composited onto a canonical $512 \times 512$ square tensor centered with an 85% bounding box margin and neutral gray padding ($V = 127$). This standardizes camera focal length priors and perspective scales for the downstream Vision Transformer tokenizer.
 
-### Case Study 2: Micro-electronics OLED Display Module
-- **Source Photograph:** Close-up technical component photo featuring an I2C OLED display board.
-- **Challenge:** High-contrast micro-text (`FM101.7`, `Menu`, `MSN`), miniature status icons (battery, Bluetooth, antenna bars), 4 pin labels (`VCC`, `GND`, `SCL`, `SDA`), 4 corner mounting holes, and copper ribbon cable.
-- **Reconstruction Metrics:**
-  - **Extents:** $27.0 \times 27.0 \times 4.0\text{ mm}$
-  - **Face Count:** 19,999 faces
-  - **Visual Result:** Crisp optical display readability in Three.js "Ảnh thật" mode with zero text distortion, correct upright orientation, and a solid blue PCB backing without mirror bleed-through.
+![Figure 1: Salient Object Extraction & Canvas Normalization Pipeline](docs/images/fig1_input_preprocessing_pipeline.png)
 
-### Automated Test Suite
-- Comprehensive automated verification across 26 test modules:
-```bash
-pytest tests/ -v
-============================= 26 passed in 13.91s =============================
-```
-- Passes all unit tests for background segmentation, pinhole back-projection, metric calibration, ArUco fiducials, and mesh multi-format exports.
+*Figure 1: Visual breakdown of the input preprocessing pipeline. (a) Raw input photograph in a complex office environment. (b) High-precision foreground segmentation via U2-Net alpha matte. (c) Canonical $512 \times 512$ centered neural input canvas with neutral padding.*
+
+---
+
+### Stage 2: Spatial Coordinate Projection & Iso-surface Geometry Analysis
+The continuous neural field density $\sigma(\mathbf{x})$ is queried across the canonical bounding volume $\mathbf{x} \in [-1, 1]^3$. To analyze the spatial distribution and geometric consistency of the predicted object prior to mesh extraction, point cloud slices and coordinate projections are generated across all primary orthogonal and perspective viewing planes ($XY, YZ, XZ$).
+
+![Figure 2: Spatial Coordinate Distribution and Multi-Plane Projection Analysis](docs/images/fig2_spatial_coordinate_analysis.png)
+
+*Figure 2: Orthogonal and perspective projections of the extracted 3D spatial coordinate field, verifying continuous density boundaries and geometric symmetry across all 6 viewing projections.*
+
+---
+
+### Stage 3: Multi-View Omnidirectional Neural 3D Geometry Reconstruction
+Following Marching Cubes isosurface extraction at $256^3$ grid resolution, the polygon mesh is mapped into the standard engineering CAD coordinate frame ($X_{cad} = Y_{tsr}, Y_{cad} = X_{tsr}, Z_{cad} = Z_{tsr}$) and grounded with its base at $Y = 0$. The resulting geometry represents a true 360° watertight solid enclosure without open boundaries or planar collapse.
+
+![Figure 3: Multi-View Omnidirectional Neural 3D Geometry Reconstruction](docs/images/fig3_neural_geometry_multiview.png)
+
+*Figure 3: Shaded 3D surface geometry inspected across 6 discrete camera viewpoints (Front, Isometric 3/4, Side Profile, Top Down, Rear Back, Rear 3/4), highlighting curvature preservation and complete occlusion-free back-surface synthesis.*
+
+---
+
+### Stage 4: Normal-Aware Camera-Ray UV Projection & Surface Texture Disentanglement
+To overcome the blurriness of low-frequency neural vertex colors, the system casts rays from camera space back onto the reconstructed mesh. Surface normals $\mathbf{N} = (N_x, N_y, N_z)$ determine texture assignment: front-facing polygons ($N_z > -0.15$) receive high-frequency photographic projection, while rear-facing polygons ($N_z \le -0.15$) transition into the dominant solid CAD material tone to avoid mirror bleed-through.
+
+![Figure 4: Normal-Aware Camera-Ray UV Projection & Front/Back Material Disentanglement](docs/images/fig4_texture_uv_projection_disentanglement.png)
+
+*Figure 4: Front and rear perspective comparison of the textured 3D reconstruction. The front face captures sub-millimeter silkscreen typography and electrical connections, while the rear face maintains solid substrate coloration without specular or mirror artifacts.*
+
+---
+
+### Stage 5: Quadric Mesh Decimation & Metric CAD Scale Calibration
+Industrial CAD/CAM applications and real-time WebGL engines require clean, simplified surface topologies. The raw Marching Cubes mesh (~105,000 faces) is reduced via quadric error metric decimation to exactly **~20,000 faces** while preserving sharp edges and mechanical silhouettes. Vertices are subsequently scaled to real-world millimeters ($W \times H \times D$) for downstream fabrication and 3D printing.
+
+![Figure 5: Metric CAD Alignment & Quadric Decimation Wireframe Topology](docs/images/fig5_cad_metric_calibration_wireframe.png)
+
+*Figure 5: Wireframe topology of the calibrated 20,000-face mesh across perspective, front, and side elevations, demonstrating uniform polygon density and strict metric alignment.*
 
 ---
 
@@ -278,44 +294,6 @@ single-image-3d-recon/
     ├── test_depth_processor.py
     ├── test_geometry_utils.py
     └── test_reference_detector.py
-```
-
----
-
-## Future Research Directions
-
-1. **Multi-View Consistent 3D Gaussian Splatting (3DGS):**
-   - Incorporating sparse multi-view diffusion priors (e.g., SV3D / Zero123++) into Gaussian splat representation for real-time sub-millimeter rendering of specular highlights and micro-geometry.
-2. **Disentangled PBR Material Estimation (Delighting):**
-   - Integrating inverse rendering neural networks to disentangle intrinsic diffuse albedo from environmental shading, estimating explicit Metallic, Roughness, and Ambient Occlusion (ORM) texture maps.
-3. **Parametric Feature Recognition & B-Rep Solid CAD Export:**
-   - Developing geometric primitive extraction (planes, cylinders, fillets) from the decimated mesh to export native parametric STEP (`.step`, `.stp`) and IGES (`.igs`) solid CAD models for direct editing in SolidWorks, Autodesk Fusion 360, and Siemens NX.
-4. **Automated Internal Volume & Shell Infill Synthesis:**
-   - Generating internal mounting bosses, screw standoffs, and wall thickness offsets for rapid prototyping of functional injection-molded plastic enclosures.
-
----
-
-## Pushing to GitHub
-
-To push this repository to your GitHub account under the repository name **`single-image-3d-recon`**:
-
-```bash
-# 1. Initialize Git repository (if not already done)
-git init
-
-# 2. Add all files and make initial commit
-git add .
-git commit -m "feat: initial commit of single-image-3d-recon production pipeline"
-
-# 3. Rename branch to main
-git branch -M main
-
-# 4. Link your remote GitHub repository
-# (Replace <your-username> with your actual GitHub username)
-git remote add origin https://github.com/<your-username>/single-image-3d-recon.git
-
-# 5. Push to GitHub
-git push -u origin main
 ```
 
 ---
