@@ -81,32 +81,42 @@ Traditional single-image 3D reconstruction pipelines predominantly rely on **2.5
 
 ## System Architecture
 
+![End-to-End System Architecture](docs/images/fig0_system_architecture.png)
+
+*Figure 0: High-level architectural flowchart of the single-image 3D reconstruction pipeline, illustrating data transformations across preprocessing, neural field inference, geometric CAD alignment, and multi-format delivery.*
+
+<details open>
+<summary><b>📐 View Structural Flowchart (Mermaid Diagram)</b></summary>
+<br/>
+
 ```mermaid
 flowchart TD
-    subgraph Input ["1. Image Acquisition & Preprocessing"]
-        A["2D Photograph (.png, .jpg, .webp)"] --> B["U2-Net High-Precision Salient Segmentation"]
-        B --> C["Square Canvas Centering & Normalization (512x512, 85% Ratio)"]
+    subgraph S1 ["Stage 1: Image Acquisition & Preprocessing"]
+        A["2D Input Photograph<br/><i>(.png, .jpg, .webp)</i>"] --> B["U2-Net Salient<br/>Segmentation Engine"]
+        B --> C["Square Canvas Normalization<br/><i>(512x512, 85% Scale, Gray 127)</i>"]
     end
 
-    subgraph FoundationModel ["2. 360° Foundation Model (TripoSR)"]
-        C --> D["Vision Transformer Image Tokenizer (facebook/dino-vitb16)"]
-        D --> E["Triplane NeRF Transformer Backbone (model.ckpt)"]
-        E --> F["Isosurface Marching Cubes (256³ Resolution)"]
-        F --> G["Quadric Mesh Simplification (20,000 Faces via fast_simplification)"]
-        G --> H["k-d Tree Vertex Color Transfer (cKDTree)"]
+    subgraph S2 ["Stage 2: 360° Foundation Model (TripoSR)"]
+        C --> D["Vision Transformer Tokenizer<br/><i>(facebook/dino-vitb16)</i>"]
+        D --> E["Triplane NeRF Field Decoder<br/><i>(Continuous Density Field)</i>"]
+        E --> F["Marching Cubes Isosurface<br/><i>(256³ Watertight Solid)</i>"]
+        F --> G["Quadric Mesh Simplification<br/><i>(fast_simplification -> 20k Faces)</i>"]
+        G --> H["k-d Tree Color Transfer<br/><i>(cKDTree Spatial Query)</i>"]
     end
 
-    subgraph Alignment ["3. CAD Alignment & UV Synthesis"]
-        H --> I["Coordinate System Conversion: X=Y_tsr, Y=X_tsr, Z=Z_tsr"]
-        I --> J["Ground Base at Y=0 & Metric Physical Rescaling (mm)"]
-        J --> K["Normal-Aware Camera Ray UV Projection & Margin Body-Color Masking"]
+    subgraph S3 ["Stage 3: CAD Alignment & UV Synthesis"]
+        H --> I["CAD Coordinate Frame Transform<br/><i>(X_cad=Y_tsr, Y_cad=X_tsr, Z_cad=Z_tsr)</i>"]
+        I --> J["Ground Base at Y=0<br/>& Metric Rescaling in mm"]
+        J --> K["Normal-Aware Camera Ray<br/>UV Projection & Back Masking"]
     end
 
-    subgraph Output ["4. Multi-Format Delivery"]
-        K --> L["Interactive Three.js Studio (Clay, Texture, Wireframe, Exploded)"]
-        K --> M["Multi-Format Exporter (.glb + .obj/.mtl + .stl + .zip)"]
+    subgraph S4 ["Stage 4: Multi-Format Delivery"]
+        K --> L["Interactive Three.js Studio<br/><i>(Clay, Real Photo, Wireframe)</i>"]
+        K --> M["Multi-Format Industrial Export<br/><i>(.glb, .obj/.mtl, .stl, .zip)</i>"]
     end
 ```
+
+</details>
 
 ---
 
