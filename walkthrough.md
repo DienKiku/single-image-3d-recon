@@ -21,32 +21,6 @@ Tài liệu này tổng kết toàn bộ các thay đổi kiến trúc hệ th�
 
 ![End-to-End System Architecture](docs/images/fig0_system_architecture.png)
 
-```mermaid
-flowchart TD
-    subgraph S1 ["Giai đoạn 1: Tiền xử lý ảnh 2D"]
-        A["Ảnh đầu vào 2D<br/><i>(.png, .jpg, .webp)</i>"] --> B["Bóc tách nền U2-Net<br/><i>(Alpha Matte)</i>"]
-        B --> C["Chuẩn hóa khung hình<br/><i>(512x512, Gray 127)</i>"]
-    end
-
-    subgraph S2 ["Giai đoạn 2: Mô hình Foundation 360°"]
-        C --> D["Vision Transformer Tokenizer<br/><i>(DINO-ViT b16)</i>"]
-        D --> E["Triplane NeRF Decoder<br/><i>(Trường mật độ liên tục)</i>"]
-        E --> F["Marching Cubes<br/><i>(Khối đặc kín nước 256³)</i>"]
-        F --> G["Tối ưu hóa lưới đa giác<br/><i>(fast_simplification -> 20k)</i>"]
-    end
-
-    subgraph S3 ["Giai đoạn 3: Căn chỉnh CAD & Vân ảnh UV"]
-        G --> H["Chuyển đổi hệ tọa độ CAD<br/><i>(X_cad=Y, Y_cad=X, Z_cad=Z)</i>"]
-        H --> I["Tiếp đất tại Y=0<br/>& Định tỷ lệ milimét (mm)"]
-        I --> J["Chiếu tia UV nhận diện pháp tuyến<br/><i>(Bảo toàn chi tiết & chống lem mặt sau)</i>"]
-    end
-
-    subgraph S4 ["Giai đoạn 4: Trình diễn & Xuất file"]
-        J --> K["Three.js 3D Studio<br/><i>(Clay, Ảnh thật, Lưới, Bung tầng)</i>"]
-        J --> L["Xuất đa định dạng CAD<br/><i>(.glb, .obj/.mtl, .stl, .zip)</i>"]
-    end
-```
-
 ### A. Triplane NeRF & Isosurface Extraction
 SF3D kế thừa tốc độ của TripoSR nhưng nâng cấp với mạng Transformer ước lượng biểu diễn 3D liên tục (SDF/NeRF) chỉ trong $< 0.5\text{s}$ trên GPU. Lưới bề mặt sau đó được trích xuất bằng thuật toán Marching Cubes/Tetrahedra với mật độ đỉnh tối ưu.
 

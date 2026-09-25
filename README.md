@@ -85,39 +85,6 @@ Traditional single-image 3D reconstruction pipelines predominantly rely on **2.5
 
 *Figure 0: High-level architectural flowchart of the single-image 3D reconstruction pipeline, illustrating data transformations across preprocessing, neural field inference, geometric CAD alignment, and multi-format delivery.*
 
-<details open>
-<summary><b>📐 View Structural Flowchart (Mermaid Diagram)</b></summary>
-<br/>
-
-```mermaid
-flowchart TD
-    subgraph S1 ["Stage 1: Image Acquisition & Preprocessing"]
-        A["2D Input Photograph<br/><i>(.png, .jpg, .webp)</i>"] --> B["U2-Net Salient<br/>Segmentation Engine"]
-        B --> C["Square Canvas Normalization<br/><i>(512x512, 85% Scale, Gray 127)</i>"]
-    end
-
-    subgraph S2 ["Stage 2: 360° Foundation Model (TripoSR)"]
-        C --> D["Vision Transformer Tokenizer<br/><i>(facebook/dino-vitb16)</i>"]
-        D --> E["Triplane NeRF Field Decoder<br/><i>(Continuous Density Field)</i>"]
-        E --> F["Marching Cubes Isosurface<br/><i>(256³ Watertight Solid)</i>"]
-        F --> G["Quadric Mesh Simplification<br/><i>(fast_simplification -> 20k Faces)</i>"]
-        G --> H["k-d Tree Color Transfer<br/><i>(cKDTree Spatial Query)</i>"]
-    end
-
-    subgraph S3 ["Stage 3: CAD Alignment & UV Synthesis"]
-        H --> I["CAD Coordinate Frame Transform<br/><i>(X_cad=Y_tsr, Y_cad=X_tsr, Z_cad=Z_tsr)</i>"]
-        I --> J["Ground Base at Y=0<br/>& Metric Rescaling in mm"]
-        J --> K["Normal-Aware Camera Ray<br/>UV Projection & Back Masking"]
-    end
-
-    subgraph S4 ["Stage 4: Multi-Format Delivery"]
-        K --> L["Interactive Three.js Studio<br/><i>(Clay, Real Photo, Wireframe)</i>"]
-        K --> M["Multi-Format Industrial Export<br/><i>(.glb, .obj/.mtl, .stl, .zip)</i>"]
-    end
-```
-
-</details>
-
 ---
 
 ## Model Construction & Visual Validation Pipeline
