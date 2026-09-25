@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/cover.png" alt="Single-Image to 3D Reconstruction Banner" width="100%">
+</p>
+
 # Single-Image to 3D Reconstruction (`single-image-3d-recon`)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
