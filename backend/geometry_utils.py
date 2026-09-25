@@ -250,14 +250,17 @@ def compute_exploded_positions(
     centroids: list[np.ndarray],
     global_centroid: np.ndarray,
     expansion_factor: float,
+    axis: int | None = None,
+    total_span: float | None = None,
 ) -> list[np.ndarray]:
-    """
-    Compute offset positions for an exploded view of layers.
+    """Compute offset positions for an exploded view of layers.
 
     Args:
         centroids: List of layer centroid positions.
         global_centroid: The global center of the object.
         expansion_factor: The factor to expand by (0.0 to 1.0+).
+        axis: Optional axis index (0 for X, 1 for Y, 2 for Z) to restrict explosion strictly along that axis.
+        total_span: Optional total dimension along the axis to ensure proportional physical displacement.
 
     Returns:
         A list of offset vectors for each centroid.
@@ -265,6 +268,23 @@ def compute_exploded_positions(
     if len(centroids) <= 1:
         return [np.zeros(3)]
         
+    num_layers = len(centroids)
+    
+    if axis is not None:
+        step = (total_span * 0.40) if (total_span is not None and total_span > 1.0) else 100.0
+        axis_coords = [float(c[axis]) for c in centroids]
+        sorted_indices = np.argsort(axis_coords)
+        ranks = np.zeros(num_layers, dtype=float)
+        for rank, idx in enumerate(sorted_indices):
+            ranks[idx] = (rank - (num_layers - 1) / 2.0)
+            
+        offsets = []
+        for i in range(num_layers):
+            vec = np.zeros(3, dtype=float)
+            vec[axis] = ranks[i] * step * expansion_factor
+            offsets.append(vec)
+        return offsets
+
     offsets = []
     for centroid in centroids:
         offset = (centroid - global_centroid) * expansion_factor

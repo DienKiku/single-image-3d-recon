@@ -169,6 +169,15 @@ def main():
             st.session_state.physical_dims = (target_w, target_h, target_d)
             st.session_state.calibration_method = ref_type
             
+            # Extract and preserve full isolated foreground object for 3D generation
+            pad = 8
+            x0 = max(0, x - pad)
+            y0 = max(0, y - pad)
+            x1 = min(img_w, x + bw + pad)
+            y1 = min(img_h, y + bh + pad)
+            cropped_full = clean_rgba[y0:y1, x0:x1].copy()
+            st.session_state.full_foreground_image = cropped_full
+
             from backend.ai_processor import SegmentedLayer
             if sidebar_state.reconstruction_mode == "layers":
                 from backend.ai_processor import get_segmenter
@@ -176,16 +185,10 @@ def main():
                 layers = segmenter.segment(img, target_roi=bbox)
             else:
                 # Unified Single-Mesh Mode: entire isolated object
-                pad = 8
-                x0 = max(0, x - pad)
-                y0 = max(0, y - pad)
-                x1 = min(img_w, x + bw + pad)
-                y1 = min(img_h, y + bh + pad)
-                cropped_img = clean_rgba[y0:y1, x0:x1].copy()
                 layers = [SegmentedLayer(
                     layer_id="full_model",
                     mask=mask,
-                    cropped_image=cropped_img,
+                    cropped_image=cropped_full,
                     bbox=(x0, y0, x1 - x0, y1 - y0),
                     confidence=0.99
                 )]
@@ -216,31 +219,52 @@ def main():
             meshes_dir.mkdir(parents=True, exist_ok=True)
             textures_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate base 3D mesh from foreground object
-            layer0 = st.session_state.segmented_layers[0]
+            # Generate base 3D mesh from complete foreground object
+            source_img = getattr(st.session_state, "full_foreground_image", None)
+            if source_img is None:
+                source_img = st.session_state.segmented_layers[0].cropped_image
+
             full_mesh_obj = generator.run_image(
-                layer0.cropped_image,
+                source_img,
                 target_dimensions_mm=target_dim,
             )
             aligned_full = AssetExporter3D.align_to_ground(
                 full_mesh_obj, target_dimensions_mm=target_dim
             )
 
+            # Prepare diffuse texture from the full source image
+            if hasattr(generator, "preprocessor"):
+                processed_tex = generator.preprocessor.process(source_img)
+            elif hasattr(generator, "preprocess_image"):
+                processed_tex = generator.preprocess_image(source_img)
+            else:
+                processed_tex = Image.fromarray(source_img) if isinstance(source_img, np.ndarray) else source_img
+
+            # Determine slicing axis: 1 for Y (vertical), 2 for Z (depth)
+            chosen_axis_name = getattr(sidebar_state, "explosion_axis", "y")
+            if chosen_axis_name == "z":
+                slice_axis = 2
+            elif chosen_axis_name == "auto":
+                # Flat/thin objects (depth < 0.35 * max(width, height)) explode along Z
+                w_ext, h_ext, d_ext = aligned_full.extents
+                slice_axis = 2 if d_ext < 0.35 * max(w_ext, h_ext) else 1
+            else:
+                slice_axis = 1
+
             if sidebar_state.reconstruction_mode == "layers":
-                # Multi-layer mode: Slice full 3D model into aligned vertical layers along Y
-                sliced_trimeshes = slice_mesh_into_layers(aligned_full, num_layers=3, axis=1)
+                # Multi-layer mode: Slice full 3D model into aligned watertight layers
+                sliced_trimeshes = slice_mesh_into_layers(
+                    aligned_full,
+                    num_layers=3,
+                    axis=slice_axis,
+                    use_smart_seams=True,
+                    foreground_ratio=sidebar_state.foreground_ratio,
+                )
                 generated_meshes = []
                 for idx, sub_m in enumerate(sliced_trimeshes):
                     lid = f"layer_{idx+1:02d}"
                     obj_path = meshes_dir / f"{lid}.obj"
                     tex_path = textures_dir / f"{lid}_diffuse.png"
-
-                    if hasattr(generator, "preprocessor"):
-                        processed_tex = generator.preprocessor.process(layer0.cropped_image)
-                    elif hasattr(generator, "preprocess_image"):
-                        processed_tex = generator.preprocess_image(layer0.cropped_image)
-                    else:
-                        processed_tex = Image.fromarray(layer0.cropped_image) if isinstance(layer0.cropped_image, np.ndarray) else layer0.cropped_image
                     processed_tex.save(tex_path)
 
                     AssetExporter3D.export_all(
@@ -265,13 +289,6 @@ def main():
                 lid = "full_model"
                 obj_path = meshes_dir / f"{lid}.obj"
                 tex_path = textures_dir / f"{lid}_diffuse.png"
-
-                if hasattr(generator, "preprocessor"):
-                    processed_tex = generator.preprocessor.process(layer0.cropped_image)
-                elif hasattr(generator, "preprocess_image"):
-                    processed_tex = generator.preprocess_image(layer0.cropped_image)
-                else:
-                    processed_tex = Image.fromarray(layer0.cropped_image) if isinstance(layer0.cropped_image, np.ndarray) else layer0.cropped_image
                 processed_tex.save(tex_path)
 
                 AssetExporter3D.export_all(
@@ -299,12 +316,21 @@ def main():
             
             centroids = [np.array(m.centroid_3d) for m in generated_meshes]
             global_centroid = np.mean(centroids, axis=0) if centroids else np.zeros(3)
-            explosion_dirs = compute_exploded_positions(centroids, global_centroid, 1.0) if len(generated_meshes) > 1 else [np.zeros(3)]
+            
+            # Axial explosion for clean mechanical assembly separation
+            total_span_axis = float(aligned_full.extents[slice_axis])
+            explosion_dirs = compute_exploded_positions(
+                centroids,
+                global_centroid,
+                expansion_factor=1.0,
+                axis=slice_axis,
+                total_span=total_span_axis,
+            ) if len(generated_meshes) > 1 else [np.zeros(3)]
 
             mesh_viewer_data = []
             for idx, mesh_result in enumerate(generated_meshes):
                 tri_mesh = load_obj_as_trimesh(mesh_result.mesh_path)
-                color = compute_dominant_color(st.session_state.segmented_layers[0].cropped_image)
+                color = compute_dominant_color(source_img)
                 
                 viewer_data = trimesh_to_viewer_data(
                     mesh=tri_mesh,

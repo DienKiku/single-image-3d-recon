@@ -63,7 +63,7 @@ def test_create_depth_mesh_target_dimensions() -> None:
 
 
 def test_slice_mesh_into_layers() -> None:
-    """Verify that slice_mesh_into_layers splits the mesh along Y into multiple layers."""
+    """Verify that slice_mesh_into_layers creates watertight, planar-capped layers with UV mapping."""
     image = np.full((60, 60, 3), 150, dtype=np.uint8)
     depth = np.ones((60, 60), dtype=np.float32) * 0.5
     mesh = create_depth_mesh(image, depth, max_grid_size=25)
@@ -75,6 +75,40 @@ def test_slice_mesh_into_layers() -> None:
         assert isinstance(lyr, trimesh.Trimesh)
         assert len(lyr.vertices) > 0
         assert len(lyr.faces) > 0
+        assert lyr.is_watertight
+        assert hasattr(lyr.visual, "uv") and lyr.visual.uv is not None
+        assert len(lyr.visual.uv) == len(lyr.vertices)
+
+
+def test_slice_mesh_into_layers_z_axis() -> None:
+    """Verify that slice_mesh_into_layers operates along Z depth axis for flat electronics/OLED."""
+    box = trimesh.creation.box(extents=[100, 60, 20])
+    layers = slice_mesh_into_layers(box, num_layers=3, axis=2)
+
+    assert len(layers) == 3
+    for lyr in layers:
+        assert lyr.is_watertight
+        assert hasattr(lyr.visual, "uv") and lyr.visual.uv is not None
+
+
+def test_detect_natural_seams() -> None:
+    """Verify that detect_natural_seams identifies physical joint transitions via area profiling."""
+    from backend.depth_processor import detect_natural_seams
+
+    cyl1 = trimesh.creation.cylinder(radius=10, height=20)
+    cyl1.apply_translation([0, 0, 10])
+    cyl2 = trimesh.creation.cylinder(radius=5, height=10)
+    cyl2.apply_translation([0, 0, 25])
+    cyl3 = trimesh.creation.cylinder(radius=12, height=15)
+    cyl3.apply_translation([0, 0, 37.5])
+    mesh = trimesh.util.concatenate([cyl1, cyl2, cyl3])
+
+    cuts = detect_natural_seams(mesh, axis=2, num_layers=3)
+    assert len(cuts) == 4
+    assert cuts[0] < cuts[1] < cuts[2] < cuts[3]
+    # Seam 1 and 2 should fall near the junction bounds [20, 30]
+    assert 18.0 <= cuts[1] <= 24.0
+    assert 26.0 <= cuts[2] <= 32.0
 
 
 def test_export_textured_obj(tmp_path: Path) -> None:

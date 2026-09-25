@@ -25,6 +25,7 @@ class SidebarState:
     texture_resolution: int = 1024
     remesh_option: str = "none"
     target_vertex_count: int = 15000
+    explosion_axis: str = "y"
 
 
 def render_sidebar_controls() -> SidebarState:
@@ -62,6 +63,24 @@ def render_sidebar_controls() -> SidebarState:
             label_visibility="collapsed"
         )
         rec_mode = "unified" if "Unified" in rec_mode_ui else "layers"
+        explosion_axis = "y"
+        if rec_mode == "layers":
+            axis_choice = st.selectbox(
+                "Trục phân tầng bóc tách",
+                [
+                    "Trục Đứng Y (Vertical - Máy in, Vỏ máy, Thiết bị đứng)",
+                    "Trục Chiều Sâu Z (Depth - Mạch OLED, Màn hình, Thiết bị dẹt)",
+                    "Tự động nhận diện (Auto-Detect)",
+                ],
+                index=0,
+                help="Chọn phương bóc tách phù hợp với hướng xếp chồng linh kiện của vật thể."
+            )
+            if "Chiều Sâu Z" in axis_choice:
+                explosion_axis = "z"
+            elif "Tự động" in axis_choice:
+                explosion_axis = "auto"
+            else:
+                explosion_axis = "y"
 
         st.divider()
         st.subheader("🤖 3. Engine Dựng Hình 3D")
@@ -157,6 +176,7 @@ def render_sidebar_controls() -> SidebarState:
             texture_resolution=texture_res,
             remesh_option=remesh_opt,
             target_vertex_count=int(target_vertex_count),
+            explosion_axis=explosion_axis,
         )
 
 

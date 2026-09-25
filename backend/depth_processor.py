@@ -541,72 +541,291 @@ def create_depth_mesh(
     return mesh
 
 
+def detect_natural_seams(
+    mesh: trimesh.Trimesh,
+    axis: int = 1,
+    num_layers: int = 3,
+    num_samples: int = 40,
+) -> list[float]:
+    """Detect natural mechanical joint seams along an axis by analyzing cross-sectional area profile.
+
+    Scans the cross-sectional area A(s) along the specified axis to identify physical seams,
+    indented joint gaps, or geometric transitions between stacked components (e.g. lid, body, tray).
+
+    Args:
+        mesh: Input trimesh object.
+        axis: Slicing axis (0 for X, 1 for Y, 2 for Z).
+        num_layers: Desired number of layers.
+        num_samples: Number of sampling planes along the axis.
+
+    Returns:
+        Sorted list of (num_layers + 1) cut positions [c_0, c_1, ..., c_num_layers].
+    """
+    coords = mesh.vertices[:, axis]
+    min_c, max_c = float(coords.min()), float(coords.max())
+    span = max_c - min_c
+
+    if span < 1e-4 or num_layers <= 1:
+        return [min_c, max_c]
+
+    nominal_cuts = np.linspace(min_c, max_c, num_layers + 1)
+    
+    # Fast path if mesh has very few faces or span is small
+    if len(mesh.faces) < 50:
+        return [float(x) for x in nominal_cuts]
+
+    # Sample planes along the axis
+    samples = np.linspace(min_c + 0.05 * span, max_c - 0.05 * span, num_samples)
+    areas = []
+    normal = [0.0, 0.0, 0.0]
+    normal[axis] = 1.0
+
+    for s in samples:
+        origin = [0.0, 0.0, 0.0]
+        origin[axis] = s
+        sec = mesh.section(plane_origin=origin, plane_normal=normal)
+        if sec is not None:
+            try:
+                path_2d = sec.to_2D()
+                area = float(path_2d[0].area) if path_2d and hasattr(path_2d[0], "area") else 0.0
+            except Exception:
+                try:
+                    other_axes = [a for a in range(3) if a != axis]
+                    p2d = sec.vertices[:, other_axes]
+                    area = float(trimesh.points.convex_hull_area(p2d)) if len(p2d) >= 3 else 0.0
+                except Exception:
+                    area = 0.0
+        else:
+            area = 0.0
+        areas.append(area)
+
+    areas = np.array(areas, dtype=float)
+    kernel = np.array([0.25, 0.5, 0.25])
+    smoothed = np.convolve(areas, kernel, mode="same")
+    grad = np.abs(np.gradient(smoothed))
+
+    seams = []
+    for i in range(1, num_layers):
+        nom = nominal_cuts[i]
+        # Search window around nominal cut: +/- 15% of span
+        win_min = max(min_c + 0.08 * span, nom - 0.15 * span)
+        win_max = min(max_c - 0.08 * span, nom + 0.15 * span)
+
+        mask = (samples >= win_min) & (samples <= win_max)
+        if np.any(mask):
+            sub_samples = samples[mask]
+            sub_areas = smoothed[mask]
+            sub_grad = grad[mask]
+
+            a_span = float(sub_areas.max() - sub_areas.min())
+            a_norm = (sub_areas - sub_areas.min()) / a_span if a_span > 1e-6 else np.zeros_like(sub_areas)
+            g_max = float(sub_grad.max())
+            g_norm = sub_grad / g_max if g_max > 1e-6 else np.zeros_like(sub_grad)
+
+            # Score: lower area (groove / seam gap) + higher gradient (sudden step)
+            score = (1.0 - a_norm) * 0.6 + g_norm * 0.4
+            best_idx = int(np.argmax(score))
+            seams.append(float(sub_samples[best_idx]))
+        else:
+            seams.append(float(nom))
+
+    return [float(min_c)] + sorted(seams) + [float(max_c)]
+
+
 def slice_mesh_into_layers(
     mesh: trimesh.Trimesh,
     num_layers: int = 3,
     axis: int = 1,
+    use_smart_seams: bool = True,
+    foreground_ratio: float = 0.85,
 ) -> list[trimesh.Trimesh]:
-    """Slice a mesh into multiple spatial/depth layers for Exploded View.
+    """Slice a mesh into solid watertight spatial layers for Exploded Assembly View.
+
+    Uses analytical planar slicing with planar capping (`trimesh.intersections.slice_mesh_plane`)
+    to create clean, jagged-free watertight sub-components. Preserves camera-ray UV mapping
+    across the full original bounding box and applies solid engineering material to interior cut faces.
 
     Args:
-        mesh: Input trimesh object.
+        mesh: Input trimesh object (watertight or surface model).
         num_layers: Number of discrete layers to create (e.g. 3 for Top, Middle, Bottom).
         axis: 0 for X, 1 for Y (vertical/height), 2 for Z (depth).
+        use_smart_seams: Whether to detect natural structural seams via cross-sectional area scanning.
+        foreground_ratio: Foreground framing ratio used for camera UV projection.
 
     Returns:
-        List of sub-meshes, each representing one layer with its own centroid and vertices.
+        List of sub-meshes, each representing a solid, watertight layer with proper UVs and normals.
     """
-    if num_layers <= 1:
+    if num_layers <= 1 or len(mesh.vertices) < 4:
         return [mesh.copy()]
 
-    vertices = mesh.vertices
-    coords = vertices[:, axis]
-    min_c, max_c = coords.min(), coords.max()
+    coords = mesh.vertices[:, axis]
+    min_c, max_c = float(coords.min()), float(coords.max())
     span = max_c - min_c
 
     if span < 1e-5:
         return [mesh.copy()]
 
-    layer_bounds = np.linspace(min_c, max_c, num_layers + 1)
+    # Global bounding box for continuous camera UV projection across all layers
+    vx = mesh.vertices[:, 0]
+    vy = mesh.vertices[:, 1]
+    xc = float(vx.min() + vx.max()) / 2.0
+    yc = float(vy.min() + vy.max()) / 2.0
+    L = float(max(vx.max() - vx.min(), vy.max() - vy.min(), 1e-5))
+
+    has_orig_uv = hasattr(mesh.visual, "uv") and mesh.visual.uv is not None and len(mesh.visual.uv) == len(mesh.vertices)
+    has_orig_vc = hasattr(mesh.visual, "vertex_colors") and mesh.visual.vertex_colors is not None and len(mesh.visual.vertex_colors) == len(mesh.vertices)
+
+    kdtree = None
+    if has_orig_uv or has_orig_vc:
+        try:
+            from scipy.spatial import KDTree
+            kdtree = KDTree(mesh.vertices)
+        except Exception:
+            kdtree = None
+
+    # Determine cut positions
+    if use_smart_seams and len(mesh.faces) >= 50:
+        try:
+            layer_bounds = detect_natural_seams(mesh, axis=axis, num_layers=num_layers)
+        except Exception:
+            layer_bounds = np.linspace(min_c, max_c, num_layers + 1).tolist()
+    else:
+        layer_bounds = np.linspace(min_c, max_c, num_layers + 1).tolist()
+
+    normal_pos = [0.0, 0.0, 0.0]
+    normal_pos[axis] = 1.0
+    normal_neg = [0.0, 0.0, 0.0]
+    normal_neg[axis] = -1.0
+
     layers = []
 
     for i in range(num_layers):
-        low = layer_bounds[i]
-        high = layer_bounds[i + 1]
+        low = float(layer_bounds[i])
+        high = float(layer_bounds[i + 1])
+        origin_low = [0.0, 0.0, 0.0]
+        origin_low[axis] = low
+        origin_high = [0.0, 0.0, 0.0]
+        origin_high[axis] = high
 
-        # Find vertices belonging to this layer
-        if i == num_layers - 1:
-            mask = (coords >= low) & (coords <= high)
+        sub = None
+        # Attempt analytical planar slicing with capping (creates watertight solid)
+        try:
+            if i == 0:
+                sub = trimesh.intersections.slice_mesh_plane(
+                    mesh, plane_normal=normal_neg, plane_origin=origin_high, cap=True
+                )
+            elif i == num_layers - 1:
+                sub = trimesh.intersections.slice_mesh_plane(
+                    mesh, plane_normal=normal_pos, plane_origin=origin_low, cap=True
+                )
+            else:
+                tmp = trimesh.intersections.slice_mesh_plane(
+                    mesh, plane_normal=normal_pos, plane_origin=origin_low, cap=True
+                )
+                sub = trimesh.intersections.slice_mesh_plane(
+                    tmp, plane_normal=normal_neg, plane_origin=origin_high, cap=True
+                )
+        except Exception:
+            sub = None
+
+        # Fallback without capping if topology issue occurs
+        if sub is None or len(sub.vertices) == 0:
+            try:
+                if i == 0:
+                    sub = trimesh.intersections.slice_mesh_plane(
+                        mesh, plane_normal=normal_neg, plane_origin=origin_high, cap=False
+                    )
+                elif i == num_layers - 1:
+                    sub = trimesh.intersections.slice_mesh_plane(
+                        mesh, plane_normal=normal_pos, plane_origin=origin_low, cap=False
+                    )
+                else:
+                    tmp = trimesh.intersections.slice_mesh_plane(
+                        mesh, plane_normal=normal_pos, plane_origin=origin_low, cap=False
+                    )
+                    sub = trimesh.intersections.slice_mesh_plane(
+                        tmp, plane_normal=normal_neg, plane_origin=origin_high, cap=False
+                    )
+            except Exception:
+                sub = None
+
+        # Fallback to discrete vertex mask if slice_mesh_plane fails entirely
+        if sub is None or len(sub.vertices) == 0:
+            mask = (coords >= low) & (coords <= high) if i == num_layers - 1 else (coords >= low) & (coords < high)
+            if np.any(mask):
+                face_masks = mask[mesh.faces]
+                valid = np.sum(face_masks, axis=1) >= 2
+                if np.any(valid):
+                    sub_f = mesh.faces[valid]
+                    u_idx, new_f = np.unique(sub_f, return_inverse=True)
+                    sub = trimesh.Trimesh(
+                        vertices=mesh.vertices[u_idx],
+                        faces=new_f.reshape(-1, 3),
+                        process=False,
+                    )
+
+        if sub is None or len(sub.vertices) == 0:
+            continue
+
+        # Fix normals while preserving manifold watertight cap topology
+        try:
+            sub.fix_normals()
+        except Exception:
+            pass
+
+        # Compute continuous camera ray UV projection
+        sub_x = sub.vertices[:, 0]
+        sub_y = sub.vertices[:, 1]
+        u_proj = np.clip(0.5 + (sub_x - xc) / L * foreground_ratio, 0.0, 1.0)
+        v_proj = np.clip(0.5 + (sub_y - yc) / L * foreground_ratio, 0.0, 1.0)
+
+        # Normal-aware UV: front faces get photo texture, cut caps & back get solid margin (0.02, 0.98)
+        try:
+            nz = sub.vertex_normals[:, 2] if len(sub.vertex_normals) == len(sub.vertices) else np.ones(len(sub.vertices))
+        except Exception:
+            nz = np.ones(len(sub.vertices))
+
+        # Check if vertex is on the interior cut cap
+        is_cap = np.isclose(sub.vertices[:, axis], low, atol=1e-2) | np.isclose(sub.vertices[:, axis], high, atol=1e-2)
+
+        w_front = np.clip((nz + 0.15) / 0.25, 0.0, 1.0)
+        # Cap vertices strictly sample the solid engineering body color margin
+        w_front[is_cap] = 0.0
+
+        if has_orig_uv and kdtree is not None:
+            dist, idx = kdtree.query(sub.vertices)
+            sub_uv = np.asarray(mesh.visual.uv)[idx].copy()
+            # New cut vertices or cap vertices transition cleanly
+            is_new = (dist > 1e-3) | is_cap
+            sub_uv[is_new, 0] = w_front[is_new] * u_proj[is_new] + (1.0 - w_front[is_new]) * 0.02
+            sub_uv[is_new, 1] = w_front[is_new] * v_proj[is_new] + (1.0 - w_front[is_new]) * 0.98
         else:
-            mask = (coords >= low) & (coords < high)
+            u_final = w_front * u_proj + (1.0 - w_front) * 0.02
+            v_final = w_front * v_proj + (1.0 - w_front) * 0.98
+            sub_uv = np.column_stack([u_final, v_final]).astype(np.float32)
 
-        if not np.any(mask):
-            continue
+        # Handle vertex colors (neutral metallic / industrial styling for cap faces)
+        if has_orig_vc and kdtree is not None:
+            dist, idx = kdtree.query(sub.vertices)
+            sub_vc = np.asarray(mesh.visual.vertex_colors)[idx].copy()
+            sub_vc[is_cap] = [200, 205, 215, 255]
+        else:
+            # Subtle layer tint for Studio Clay mode (clean distinction between layers)
+            tints = [
+                [225, 230, 240, 255],
+                [200, 208, 220, 255],
+                [180, 188, 200, 255],
+            ]
+            base_tint = tints[i % len(tints)]
+            sub_vc = np.tile(base_tint, (len(sub.vertices), 1)).astype(np.uint8)
+            sub_vc[is_cap] = [170, 178, 192, 255]
 
-        # Find faces where all vertices or at least 2 vertices belong to this layer
-        face_vert_masks = mask[mesh.faces]
-        valid_faces = np.sum(face_vert_masks, axis=1) >= 2
-
-        if not np.any(valid_faces):
-            continue
-
-        sub_faces = mesh.faces[valid_faces]
-        # Re-index vertices for submesh
-        unique_vert_indices, new_faces = np.unique(sub_faces, return_inverse=True)
-        sub_vertices = vertices[unique_vert_indices]
-        new_faces = new_faces.reshape(-1, 3)
-
-        sub_colors = None
-        if hasattr(mesh.visual, "vertex_colors") and mesh.visual.vertex_colors is not None:
-            sub_colors = mesh.visual.vertex_colors[unique_vert_indices]
-
-        sub_mesh = trimesh.Trimesh(
-            vertices=sub_vertices,
-            faces=new_faces,
-            vertex_colors=sub_colors,
-            process=False
+        # Use TextureVisuals so trimesh exports `vt` coordinates into OBJ!
+        sub.visual = trimesh.visual.TextureVisuals(
+            uv=sub_uv.astype(np.float32),
         )
-        layers.append(sub_mesh)
+        sub.visual.vertex_colors = sub_vc
+        layers.append(sub)
 
     if not layers:
         return [mesh.copy()]
