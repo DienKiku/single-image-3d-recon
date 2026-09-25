@@ -89,11 +89,17 @@ $$
 - **`.stl`:** Watertight solid triangle mesh ready for slicers (Cura, PrusaSlicer, Bambu Studio) and additive manufacturing.
 - **`.zip` Bundle:** Automated packaging containing all 3D formats, texture maps, and `project_metadata.json`.
 
-### 6. Interactive Three.js Web Studio
+### 6. Watertight Multi-Layer Exploded Assembly & Natural Seam Detection
+- **Analytical Planar Slicing (`cap=True`):** Replaces naive discrete vertex filtering with exact computational geometry planes (`slice_mesh_plane`). Automatically generates planar capping polygons, ensuring every sliced component is a **100% watertight solid CAD component (`is_watertight: True`)** free of sawtooth or jagged edge artifacts.
+- **Cross-Sectional Area Gradient Seam Detection ($A(s)$):** Automatically scans area profiles along the chosen axis to detect natural physical joint boundaries (scanner lids, paper trays, PCB enclosures) via local minima and gradient peaks $\left|\frac{dA}{ds}\right|$.
+- **Continuous Camera UV Preservation:** Sliced sub-meshes inherit full-canvas camera-ray UV mapping, allowing the outer shell to display continuous real photo textures, while internal cut caps transition into solid engineered material colors without texture distortion.
+- **Multi-Axis Kinematics (Y & Z Axes):** Supports vertical explosion along the $Y$-axis (for tall hardware, printers, appliances) and depth explosion along the $Z$-axis (for slim electronics, display panels, OLED modules) with pure axial translation.
+
+### 7. Interactive Three.js Web Studio
 - **🎨 Studio Clay Mode:** Smooth off-white CAD shading highlighting physical contours, fillets, and bevels.
 - **🖼️ Real Photo Texture Mode:** Optical texture rendering with **16x Anisotropic Filtering** and linear mipmapping for crisp text viewing.
 - **📐 Wireframe Overlay:** Structural triangle mesh density and topology inspector.
-- **💥 Exploded Assembly View:** Slice the 3D model into aligned functional vertical layers with interactive $0\% - 100\%$ separation slider along the $Y$-axis.
+- **💥 Multi-Axis Exploded View:** Real-time $0\% - 100\%$ interactive separation slider with strict axial kinematics. At $0\%$, layers form an air-tight, seamless CAD assembly; at $>0\%$, layers separate cleanly along the chosen axis.
 
 ---
 
@@ -163,7 +169,7 @@ Industrial CAD/CAM applications and real-time WebGL engines require clean, simpl
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/<your-username>/single-image-3d-recon.git
+git clone https://github.com/DienKiku/single-image-3d-recon.git
 cd single-image-3d-recon
 ```
 
@@ -204,26 +210,29 @@ Launch the interactive web application:
 streamlit run app.py
 ```
 Open your browser at `http://localhost:8501`:
-1. **📁 1. Tải ảnh lên (Upload Image):** Drop any photo of an object (printer, electronic module, furniture, shoes, tools).
-2. **🔍 2. Phân tích & Tách nền (Analyze & Isolate):** Automatically segments the foreground object with U2-Net and removes background clutter.
-3. **📏 3. Hiệu chuẩn kích thước (Metric Calibration):** Choose physical dimensions via presets, manual width (mm), or automatic ratio.
-4. **🧊 4. Tái tạo mô hình 3D (Generate 3D):** Executes TripoSR transformer inference, isosurface extraction, and normal-aware UV texture synthesis in ~15-20 seconds.
-5. **🛠️ 5. Trải nghiệm trong 3D Studio:**
-   - **🎨 Studio Clay:** Inspect pure CAD geometry and surface curvature.
-   - **🖼️ Ảnh thật:** View the photorealistic textured model with 16x anisotropic filtering.
-   - **📐 Lưới:** Toggle wireframe topology.
-   - **💥 Độ bung phân tầng (Exploded View):** Dynamically separate layers along the vertical axis.
-6. **📦 6. Xuất file 3D (Export Project):** Download the full production archive containing `.glb`, `.obj`, `.mtl`, `.stl`, and metadata.
+1. **📁 1. Tải ảnh lên (Upload Image):** Drop any photo of an object (printers, electronic modules, machinery, furniture, footwear, industrial components).
+2. **📐 2. Chế độ dựng hình (3D Mode):**
+   - **✨ Toàn bộ mô hình (Unified 3D Model):** Generates a continuous, monolithic 360° watertight solid CAD asset.
+   - **💥 Phân tầng bóc tách (Multi-Layer Exploded):** Disassembles the model into discrete functional components with automated seam detection along **Trục Đứng Y (Vertical)** or **Trục Chiều Sâu Z (Depth)**.
+3. **🤖 3. Engine Dựng Hình 3D & 📏 4. Định Cỡ Kích Thước (Scale):** Configure mesh resolution, foreground canvas framing, and physical dimensions in millimeters ($W \times H \times D$).
+4. **🧊 5. Tái tạo mô hình 3D (Generate 3D):** Synthesizes the full 3D geometry and normal-aware UV texture maps in ~15-20 seconds.
+5. **🛠️ 6. Trải nghiệm trong 3D Studio Viewer:**
+   - **🎨 Studio Clay:** Inspect pure CAD geometry, surface curvature, and layer boundaries.
+   - **🖼️ Ảnh thật:** Inspect photorealistic optical textures with 16x anisotropic filtering.
+   - **📐 Lưới:** Inspect wireframe mesh topology and quadric decimation.
+   - **💥 Độ bung phân tầng (Exploded Slider):** Interactively expand and collapse assembly components ($0\% - 100\%$) along the selected kinematics axis.
+6. **📦 7. Xuất file 3D (Export Project):** Download the full production archive containing `.glb`, `.obj`, `.mtl`, `.stl`, and metadata.
 
 ### 2. Programmatic Python API
 
-You can also use the reconstruction engine directly in headless Python scripts:
+You can also use the reconstruction engine and multi-layer disassembler directly in headless Python scripts:
 
 ```python
+from pathlib import Path
 from PIL import Image
 from backend.ai_processor import get_mesh_generator
 from backend.sf3d_pipeline import AssetExporter3D
-from pathlib import Path
+from backend.depth_processor import slice_mesh_into_layers
 
 # 1. Initialize the 360° Foundation Model generator
 generator = get_mesh_generator(
@@ -232,27 +241,36 @@ generator = get_mesh_generator(
     target_vertex_count=20000
 )
 
-# 2. Load input image
+# 2. Load input photograph
 image = Image.open("assets/sample_object.png").convert("RGB")
 
-# 3. Generate watertight CAD mesh with projected UVs
+# 3. Generate 360° watertight CAD mesh with projected camera UVs
 mesh = generator.run_image(image)
 
-# 4. Align upright to ground (base at Y=0) and scale to real dimensions (Width, Height, Depth in mm)
+# 4. Align upright to ground (base at Y=0) and scale to real millimeters (W, H, D)
 target_dimensions_mm = (120.0, 180.0, 95.0)
 aligned_mesh = AssetExporter3D.align_to_ground(mesh, target_dimensions_mm=target_dimensions_mm)
 
-# 5. Export to GLB, OBJ, STL
-output_dir = Path("output/my_project")
-exports = AssetExporter3D.export_all(
+# 5. Multi-Layer Exploded Disassembly with smart seam detection
+# Slices along vertical (axis=1) or depth (axis=2) into 100% watertight solid components
+layers = slice_mesh_into_layers(
     mesh=aligned_mesh,
-    output_dir=output_dir,
-    base_name="reconstructed_object",
-    target_dimensions_mm=target_dimensions_mm,
-    texture_path=output_dir / "reconstructed_object_diffuse.png"
+    num_layers=3,
+    axis=1,                # 1 for Y-axis (printers/appliances), 2 for Z-axis (flat electronics)
+    use_smart_seams=True,  # Automatically detects joint boundaries via cross-sectional area scanning
+    foreground_ratio=0.85
 )
 
-print(f"Exported files: {exports}")
+# 6. Export all layers (OBJ, MTL, STL, GLB)
+output_dir = Path("output/my_project")
+for i, sub_mesh in enumerate(layers):
+    AssetExporter3D.export_all(
+        mesh=sub_mesh,
+        output_dir=output_dir / "meshes",
+        base_name=f"layer_{i+1:02d}",
+        texture_path=output_dir / "textures" / f"layer_{i+1:02d}_diffuse.png"
+    )
+    print(f"Layer {i+1}: Watertight={sub_mesh.is_watertight}, Faces={len(sub_mesh.faces)}")
 ```
 
 ---
@@ -270,9 +288,9 @@ single-image-3d-recon/
 │   ├── sf3d_pipeline.py        # AssetExporter3D, coordinate grounding & multi-format writer
 │   ├── ai_processor.py         # Model factory & segmentation interfaces
 │   ├── background_remover.py   # U2-Net memory-safe background isolation
-│   ├── depth_processor.py      # Pinhole perspective fallback engine & layer slicer
+│   ├── depth_processor.py      # Analytical planar slicing, watertight capping & natural seam detection
 │   ├── export_manager.py       # ZIP archive packager & metadata serializer
-│   ├── geometry_utils.py       # Metric scaling, fiducial detection & exploded view math
+│   ├── geometry_utils.py       # Metric scaling, fiducial detection & axial exploded kinematics
 │   ├── mesh_utils.py           # Three.js JSON serialization & OBJ loader
 │   ├── reference_detector.py   # ArUco marker & ID card scale calibrators
 │   └── tsr/                    # TripoSR neural architecture modules
@@ -284,7 +302,7 @@ single-image-3d-recon/
 │   └── threejs_viewer.py       # Embedded Three.js HTML5 WebGL OrbitControls viewer
 ├── config/
 │   └── settings.py             # Directory paths & pipeline configuration constants
-└── tests/                      # Automated pytest verification test suite (26 tests)
+└── tests/                      # Automated pytest verification test suite (28 tests)
     ├── test_background_remover.py
     ├── test_depth_processor.py
     ├── test_geometry_utils.py
