@@ -51,17 +51,31 @@ Traditional single-image 3D reconstruction pipelines predominantly rely on **2.5
 ### 2. Normal-Aware Camera Ray UV Projection
 - Bridges the resolution gap between low-frequency neural vertex colors and high-frequency 2D optical details.
 - Projects camera-space UV texture maps directly onto the 3D surface:
-  $$\begin{aligned}
-  u &= \text{clip}\left(0.5 + \frac{X - X_c}{L} \cdot \text{ratio}, 0.0, 1.0\right) \\
-  v &= \text{clip}\left(0.5 + \frac{Y - Y_c}{L} \cdot \text{ratio}, 0.0, 1.0\right)
-  \end{aligned}$$
-- **Front/Back Normal Disentanglement:** Front-facing surfaces ($N_z > -0.15$) receive razor-sharp optical texturing (micro-text, silkscreen labels, status icons, connectors). Rear surfaces ($N_z < -0.15$) transition smoothly into the dominant material body color (e.g., dark blue PCB substrate or matte industrial chassis), eliminating mirror-bleeding artifacts.
+
+$$
+u = \text{clip}\left(0.5 + \frac{X - X_c}{L} \cdot \text{ratio}, \; 0.0, \; 1.0\right)
+$$
+
+$$
+v = \text{clip}\left(0.5 + \frac{Y - Y_c}{L} \cdot \text{ratio}, \; 0.0, \; 1.0\right)
+$$
+
+- **Front/Back Normal Disentanglement:** Front-facing surfaces ($N_z > -0.15$) receive razor-sharp optical texturing (micro-text, silkscreen labels, status icons, connectors). Rear surfaces ($N_z \le -0.15$) transition smoothly into the dominant material body color (e.g., dark blue PCB substrate or matte industrial chassis), eliminating mirror-bleeding artifacts.
 
 ### 3. Universal CAD Coordinate Frame Alignment
 - Automatically transforms NeRF-camera coordinates $(X_{tsr}, Y_{tsr}, Z_{tsr})$ into standardized engineering CAD coordinates:
-  $$X_{cad} = Y_{tsr} \quad (\text{Width: Left-to-Right})$$
-  $$Y_{cad} = X_{tsr} \quad (\text{Height: Bottom-to-Top})$$
-  $$Z_{cad} = Z_{tsr} \quad (\text{Depth: Back-to-Front})$$
+
+$$
+X_{cad} = Y_{tsr} \quad (\text{Width: Left-to-Right})
+$$
+
+$$
+Y_{cad} = X_{tsr} \quad (\text{Height: Bottom-to-Top})
+$$
+
+$$
+Z_{cad} = Z_{tsr} \quad (\text{Depth: Back-to-Front})
+$$
 - Reverses triangle winding (`faces = faces[:, ::-1]`) to preserve outward-facing surface normals with strictly positive volume.
 - Centers objects on $X$ and $Z$ and grounds the base at $Y = 0$, ensuring upright orientation for any geometry (tall printers, flat electronic modules, bottles, shoes).
 
