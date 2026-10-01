@@ -20,6 +20,11 @@
 - [Overview & Motivation](#overview--motivation)
 - [Key Features & Technical Innovations](#key-features--technical-innovations)
 - [System Architecture](#system-architecture)
+  - [Stage 1: Image Acquisition & Preprocessing](#stage-1-image-acquisition--preprocessing)
+  - [Stage 2: 360° Foundation Model (TripoSR / NeRF)](#stage-2-360-foundation-model-triposr--nerf)
+  - [Stage 3: CAD Alignment & Metric Scaling](#stage-3-cad-alignment--metric-scaling)
+  - [Stage 4: Local 6-Channel PBR Material Baking Engine](#stage-4-local-6-channel-pbr-material-baking-engine)
+  - [Stage 5: Watertight Assembly & Multi-Format Delivery](#stage-5-watertight-assembly--multi-format-delivery)
 - [Model Construction & Visual Validation Pipeline](#model-construction--visual-validation-pipeline)
 - [Installation & Environment Setup](#installation--environment-setup)
 - [Usage Guide](#usage-guide)
@@ -115,7 +120,102 @@ $$
 
 ![End-to-End System Architecture](docs/images/fig0_system_architecture.png)
 
-*Figure 0: High-level architectural flowchart of the single-image 3D reconstruction pipeline, illustrating data transformations across preprocessing, neural field inference, geometric CAD alignment, and multi-format delivery.*
+*Figure 0: High-level architectural flowchart of the single-image 3D reconstruction pipeline, illustrating data transformations across preprocessing, neural field inference, geometric CAD alignment, 6-channel PBR material baking, and watertight multi-layer delivery.*
+
+The system architecture is structured as a sequential 5-stage pipeline executing **100% locally and offline** without external cloud dependencies:
+
+```mermaid
+flowchart LR
+    A["Stage 1: Preprocessing<br/>(U2-Net & Canvas Normalization)"] --> B["Stage 2: Foundation Model<br/>(TripoSR NeRF & Marching Cubes)"]
+    B --> C["Stage 3: CAD Alignment<br/>(Metric Scale & Base Grounding)"]
+    C --> D["Stage 4: PBR Baking<br/>(6-Channel Maps & Rear Chassis)"]
+    D --> E["Stage 5: Delivery & Studio<br/>(Watertight Solids & Three.js)"]
+```
+
+### Stage 1: Image Acquisition & Preprocessing
+The pipeline accepts unconstrained single-view RGB photographs (`.png`, `.jpg`, `.webp`) captured from handheld smartphones or industrial cameras.
+1. **Salient Object Segmentation:** [`backend/background_remover.py`](file:///d:/2d-to-3d/backend/background_remover.py) executes a quantized, memory-safe **U2-Net** deep boundary segmentation network to generate a high-fidelity alpha matte $\alpha(x, y) \in [0.0, 1.0]$, stripping complex backgrounds, shadows, and ambient clutter.
+2. **Canonical Canvas Normalization:** The segmented object is centered onto a square $512 \times 512$ canvas with an 85% bounding scale ratio, preserving the original physical aspect ratio while standardizing camera focal length and perspective priors for the downstream neural tokenizer.
+3. **Background Neutralization:** Pixels outside the segmented mask are populated with neutral studio gray ($V = 127, \text{RGB} = [127, 127, 127]$) and smoothed via bilateral filtering to eliminate boundary bleed during neural feature extraction.
+
+### Stage 2: 360° Foundation Model (TripoSR / NeRF)
+The normalized canvas is passed into the feed-forward 3D Foundation Model engine implemented in [`backend/triposr_generator.py`](file:///d:/2d-to-3d/backend/triposr_generator.py):
+1. **Vision Transformer Tokenizer:** A frozen **DINO-ViT b16** image encoder tokenizes the $512 \times 512$ image into a dense latent feature grid $\mathbf{Z} \in \mathbb{R}^{B \times N \times D}$, capturing both fine optical semantics and high-level shape priors.
+2. **Triplane NeRF Field Decoder:** A cross-attention Transformer decodes image tokens into triplane spatial representations spanning orthogonal projection planes ($XY, YZ, XZ$). A coordinate multi-layer perceptron (MLP) continuously evaluates volumetric density $\sigma(\mathbf{x})$ and radiosity color $\mathbf{c}(\mathbf{x})$ for arbitrary coordinates $\mathbf{x} \in \mathbb{R}^3$.
+3. **Marching Cubes Isosurface Extraction:** The continuous density field is sampled over a dense $256^3$ spatial voxel lattice. The C/Python Marching Cubes algorithm extracts an explicit, closed polygonal surface mesh enclosing strictly positive physical volume.
+4. **Quadric Mesh Simplification:** The raw extracted mesh (~105,000 polygons) is simplified using `fast_simplification` down to exactly **~20,000 faces**, retaining structural silhouettes and crisp edges. Vertex color attributes are preserved via $k$-d tree spatial nearest-neighbor transfer in $< 5\text{ ms}$.
+
+### Stage 3: CAD Alignment & Metric Scaling
+Raw neural meshes exist in camera-relative coordinates that do not conform to industrial manufacturing standards. [`backend/sf3d_pipeline.py`](file:///d:/2d-to-3d/backend/sf3d_pipeline.py) and [`backend/geometry_utils.py`](file:///d:/2d-to-3d/backend/geometry_utils.py) execute rigid geometric standardization:
+1. **CAD Coordinate Frame Transformation:** Transforms coordinates from NeRF space into standard CAD space:
+
+$$
+X_{cad} = Y_{tsr} \quad (\text{Width: Left-to-Right})
+$$
+
+$$
+Y_{cad} = X_{tsr} \quad (\text{Height: Bottom-to-Top})
+$$
+
+$$
+Z_{cad} = Z_{tsr} \quad (\text{Depth: Back-to-Front})
+$$
+
+Triangle winding order is reversed (`faces = faces[:, ::-1]`) to maintain outward-pointing surface normals and strictly positive enclosed volume.
+2. **Grounding & Base Alignment:** The object's bounding box is computed, centering $X$ and $Z$ on the origin while grounding the lowest point precisely at $Y = 0$, ensuring models stand upright on standard CAD build plates.
+3. **Metric Scale Calibration:** Scaled to real-world millimeters ($W \times H \times D$) via automated reference fiducial detection (40 mm ArUco marker or $85.6 \times 53.98\text{ mm}$ standard ID card) or user-specified dimensional overrides.
+4. **Ergonomic Rear CAD Beveling:** Replaces flat planar cutoffs with volumetric radial chamfering:
+
+$$
+\Delta z(r) = -K \cdot \left[\text{clamp}\left(\frac{r - r_0}{1.0 - r_0}, 0.0, 1.0\right)\right]^2
+$$
+
+preventing thin-wall fragility during 3D printing and creating structural rigidity.
+
+### Stage 4: Local 6-Channel PBR Material Baking Engine
+Implemented in [`backend/pbr_baker.py`](file:///d:/2d-to-3d/backend/pbr_baker.py), this engine produces physically accurate material textures across full 360° viewing angles:
+1. **Dual-Hemisphere UV Atlas:** Polygons are partitioned by surface normal vector $N_z$:
+   - **Front Hemisphere ($N_z \ge 0$):** Receives optical camera-ray projection mapping sub-millimeter details from the input photograph.
+   - **Rear Hemisphere ($N_z < 0$):** Maps onto an engineered industrial rear panel complete with horizontal ventilation louvers, perimeter chamfers, and corner metallic mounting bosses.
+2. **Albedo Delighting:** Separates ambient illumination from true surface reflectance using bilateral luminance filtering:
+
+$$
+I_{albedo}(x, y) = I_{rgb}(x, y) \cdot \frac{\mu_L}{L_{filtered}(x, y) + \epsilon}
+$$
+
+3. **Multi-Scale Tangent-Space Normal Map:** Computes surface relief gradients using dual Sobel operators ($3 \times 3$ and $5 \times 5$):
+
+$$
+\mathbf{N}_{tangent} = \text{normalize}\left(\begin{bmatrix} -\frac{\partial Z}{\partial x} \\ -\frac{\partial Z}{\partial y} \\ 1.0 \end{bmatrix}\right), \quad \mathbf{N}_{rgb} = \text{round}\left(127.5 \cdot (\mathbf{N}_{tangent} + 1.0)\right)
+$$
+
+4. **Roughness & Metallic Classification:** Analyzes optical luminance and saturation to classify materials into dielectric plastics ($R \approx 0.70, M \approx 0.0$), optical glass/screens ($R \approx 0.20, M \approx 0.0$), and metallic fasteners/connectors ($R \approx 0.35, M \approx 0.90$).
+5. **glTF ORM Texture Packing:** Combines Ambient Occlusion, Roughness, and Metallic channels into a single standardized glTF 2.0 ORM texture:
+   - **Red Channel:** Ambient Occlusion (contact shadows and cavity darkening).
+   - **Green Channel:** Perceptual Roughness ($0.0 = \text{glossy}, 1.0 = \text{matte}$).
+   - **Blue Channel:** Metallic Factor ($0.0 = \text{dielectric}, 1.0 = \text{pure metal}$).
+
+### Stage 5: Watertight Assembly & Multi-Format Delivery
+Implemented in [`backend/depth_processor.py`](file:///d:/2d-to-3d/backend/depth_processor.py) and [`frontend/threejs_viewer.py`](file:///d:/2d-to-3d/frontend/threejs_viewer.py):
+1. **Analytical Planar Slicing (`cap=True`):** Slices CAD meshes across exact spatial planes (`slice_mesh_plane`). Automatically synthesizes triangulated cap polygons across intersection boundaries, guaranteeing that every sliced component is a **100% watertight solid CAD component (`is_watertight: True`)**.
+2. **Cross-Sectional Area Gradient Seam Detection:** Scans the cross-sectional area profile $A(s)$ along the chosen kinematics axis ($Y$ or $Z$) to automatically detect natural mechanical separation seams:
+
+$$
+s_{seam} = \arg\min_s \left|\frac{dA(s)}{ds}\right| \quad \text{or} \quad \arg\min_s A(s)
+$$
+
+3. **Interactive Three.js Studio:** Embedded WebGL studio supporting:
+   - **Studio Clay Mode:** Shaded off-white CAD visualization.
+   - **Photo Texture Mode:** 16x anisotropic filtering with linear mipmapping.
+   - **Realistic PBR Mode:** Full 6-channel physically based shading with a studio 4-point dynamic lighting rig.
+   - **Wireframe Overlay:** Topology inspection.
+   - **Multi-Axis Exploded Assembly:** Continuous $0\% - 100\%$ axial expansion slider.
+   - **Precision 1% Zoom HUD:** Direct mouse wheel event interception, step buttons $\pm 1\%$, and slider spanning $25\% - 500\%$.
+4. **Multi-Format Industrial Export:** Generates standalone production assets:
+   - `.glb`: glTF 2.0 binary asset with embedded `PBRMaterial` for Three.js, Blender, Unity, and Unreal Engine.
+   - `.obj` + `.mtl`: Wavefront CAD format referencing diffuse, normal, roughness, and metallic textures.
+   - `.stl`: Watertight solid triangle mesh for 3D slicing software (Cura, Bambu Studio, PrusaSlicer).
+   - `.zip`: Complete project bundle containing all 3D formats, full 6-channel PBR PNG texture maps, and `project_metadata.json`.
 
 ---
 
@@ -287,34 +387,40 @@ for i, sub_mesh in enumerate(layers):
 
 ```plaintext
 single-image-3d-recon/
-├── app.py                      # Main Streamlit web application & viewer coordinator
-├── requirements.txt            # Python dependencies (PyTorch, trimesh, Streamlit, etc.)
-├── README.md                   # Project documentation & benchmark report
-├── .gitignore                  # Git ignore rules for virtual environments, outputs, and caches
+├── app.py                                  # Main Streamlit web application & viewer coordinator
+├── requirements.txt                        # Python dependencies (PyTorch, trimesh, Streamlit, etc.)
+├── README.md                               # Project documentation & benchmark report
+├── .gitignore                              # Git ignore rules for virtual environments, outputs, and caches
 ├── backend/
-│   ├── triposr_generator.py    # TripoSR 360° Foundation Model engine & UV synthesizer
-│   ├── sf3d_pipeline.py        # AssetExporter3D, coordinate grounding & multi-format writer
-│   ├── ai_processor.py         # Model factory & segmentation interfaces
-│   ├── background_remover.py   # U2-Net memory-safe background isolation
-│   ├── depth_processor.py      # Analytical planar slicing, watertight capping & natural seam detection
-│   ├── export_manager.py       # ZIP archive packager & metadata serializer
-│   ├── geometry_utils.py       # Metric scaling, fiducial detection & axial exploded kinematics
-│   ├── mesh_utils.py           # Three.js JSON serialization & OBJ loader
-│   ├── reference_detector.py   # ArUco marker & ID card scale calibrators
-│   └── tsr/                    # TripoSR neural architecture modules
-│       ├── system.py           # TSR model with ViT key remapping for transformers 5.x
-│       ├── models/             # NeRF decoders, isosurface Marching Cubes
-│       └── utils.py            # Coordinate transformations, foreground resizing
+│   ├── pbr_baker.py                        # Local 6-channel PBR baking engine & rear chassis synthesizer
+│   ├── triposr_generator.py                # TripoSR 360° Foundation Model engine & UV synthesizer
+│   ├── sf3d_pipeline.py                    # AssetExporter3D, coordinate grounding & multi-format writer
+│   ├── ai_processor.py                     # Model factory & segmentation interfaces
+│   ├── background_remover.py               # U2-Net memory-safe background isolation
+│   ├── depth_processor.py                  # Analytical planar slicing, watertight capping & natural seam detection
+│   ├── export_manager.py                   # ZIP archive packager & metadata serializer
+│   ├── geometry_utils.py                   # Metric scaling, fiducial detection & axial exploded kinematics
+│   ├── mesh_utils.py                       # Three.js JSON serialization & OBJ loader
+│   ├── reference_detector.py               # ArUco marker & ID card scale calibrators
+│   └── tsr/                                # TripoSR neural architecture modules
+│       ├── system.py                       # TSR model with ViT key remapping for transformers 5.x
+│       ├── models/                         # NeRF decoders, isosurface Marching Cubes
+│       └── utils.py                        # Coordinate transformations, foreground resizing
 ├── frontend/
-│   ├── components.py           # Sidebar controls, HUD metadata overlays, empty states
-│   └── threejs_viewer.py       # Embedded Three.js HTML5 WebGL OrbitControls viewer
+│   ├── components.py                       # Sidebar controls, HUD metadata overlays, empty states
+│   └── threejs_viewer.py                   # Embedded Three.js HTML5 WebGL OrbitControls viewer (PBR & 1% Zoom)
 ├── config/
-│   └── settings.py             # Directory paths & pipeline configuration constants
-└── tests/                      # Automated pytest verification test suite (28 tests)
-    ├── test_background_remover.py
-    ├── test_depth_processor.py
-    ├── test_geometry_utils.py
-    └── test_reference_detector.py
+│   └── settings.py                         # Directory paths & pipeline configuration constants
+├── scripts/
+│   ├── generate_architecture_diagram.py    # High-resolution 200 DPI system architecture diagram generator
+│   ├── run_sf3d.py                         # Production CLI pipeline runner for headless asset generation
+│   └── generate_sample_images.py           # Synthetic benchmark and fiducial test image generator
+└── tests/                                  # Automated pytest verification test suite (38 passing tests)
+    ├── test_pbr_baker.py                   # Tests for PBR maps, delighting, ORM, and rear chassis synthesis
+    ├── test_background_remover.py          # Tests for U2-Net alpha matte segmentation
+    ├── test_depth_processor.py             # Tests for watertight planar slicing & seam detection
+    ├── test_geometry_utils.py              # Tests for CAD transform, metric scale & exploded kinematics
+    └── test_reference_detector.py          # Tests for ArUco and ID card metric calibrators
 ```
 
 ---

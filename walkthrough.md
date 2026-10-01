@@ -73,6 +73,22 @@ python scripts/run_sf3d.py -i assets/samples/sample_aruco_objects.png -o output/
 
 ### B. Kiểm thử toàn bộ Test Suite (`pytest tests/ -v`)
 ```text
-============================= 26 passed in 21.53s =============================
+============================= 38 passed in 22.87s =============================
 ```
-Mọi unit test đều vượt qua 100%.
+Mọi unit test (38/38) đều vượt qua 100%, bao gồm 10 bài test chuyên sâu cho PBR baking engine, delighting, normal maps và rear chassis synthesis.
+
+---
+
+## 5. Nâng Cấp Hệ Thống PBR 6 Kênh 100% Offline & Sơ Đồ Kiến Trúc 5 Giai Đoạn
+
+1. **Bộ Nướng Vật Liệu PBR 6 Kênh Thuần Offline (`backend/pbr_baker.py`):**
+   - Tách rời ánh sáng & khử bóng đổ (Bilateral Delighting).
+   - Bản đồ pháp tuyến không gian tiếp tuyến (Multi-Scale Tangent-Space Normal Map) từ toán tử Sobel $3\times3$ và $5\times5$.
+   - Phân loại vật lý độ nhám (Roughness) & tính kim loại (Metallic) cho nhựa mờ, kính/màn hình bóng và ốc vít kim loại.
+   - Đóng gói chuẩn glTF ORM (R=AO, G=Roughness, B=Metal).
+2. **Dual-Hemisphere UV Atlas & Tổng hợp mặt sau công nghiệp:**
+   - Mặt trước ($N_z \ge 0$): Chiếu quang học ảnh chụp có độ phân giải cao.
+   - Mặt sau ($N_z < 0$): Tổng hợp vỏ máy kỹ thuật với khe tản nhiệt (ventilation slats), viền vát cạnh (perimeter chamfers), và ốc định vị kim loại (screw bosses).
+3. **Cập nhật sơ đồ kiến trúc hệ thống (`docs/images/fig0_system_architecture.png`):**
+   - Mở rộng từ 4 giai đoạn lên 5 giai đoạn hoàn chỉnh, đối xứng 4 khối mỗi giai đoạn.
+   - Phân giải cao 200 DPI ($3180 \times 1980$), tone màu tối chuẩn Studio CAD.
