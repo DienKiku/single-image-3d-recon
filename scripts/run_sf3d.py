@@ -234,15 +234,35 @@ def run_sf3d_pipeline(
         target_dimensions_mm=target_dimensions_mm,
     )
 
-    # 6. Post-Processing & Export (GLB + STL + OBJ)
+    # 6. Post-Processing & Export (GLB + STL + OBJ + PBR Textures)
     print("[2/3] Aligning coordinate frame and grounding base...")
     base_name = image_path.stem
+
+    pbr_maps = None
+    if hasattr(generator, "last_pbr_maps") and generator.last_pbr_maps:
+        pbr_maps = generator.last_pbr_maps
+    elif hasattr(generator, "triposr_gen") and hasattr(generator.triposr_gen, "last_pbr_maps"):
+        pbr_maps = generator.triposr_gen.last_pbr_maps
+    else:
+        from backend.pbr_baker import PBRBaker
+        pbr_maps = PBRBaker.bake_pbr_maps(input_pil, target_size=(texture_resolution, texture_resolution))
+
+    if pbr_maps:
+        from backend.pbr_baker import PBRBaker
+        PBRBaker.save_pbr_maps(pbr_maps, output_dir, base_name)
+
+    tex_cand = output_dir / f"{base_name}_albedo.png"
+    if not tex_cand.exists():
+        tex_cand = output_dir / f"{base_name}_diffuse.png"
+
     print(f"[3/3] Exporting 3D assets to {output_dir.resolve()}...")
     export_files = AssetExporter3D.export_all(
         mesh=mesh,
         output_dir=output_dir,
         base_name=base_name,
         target_dimensions_mm=target_dimensions_mm,
+        texture_path=tex_cand if tex_cand.exists() else None,
+        pbr_maps=pbr_maps,
     )
 
     # Clean GPU Memory After Inference

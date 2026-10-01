@@ -82,11 +82,21 @@ def export_project(
                 shutil.copy(glb_path, meshes_dir / glb_path.name)
                 glb_file_path = f"meshes/{glb_path.name}"
         
-        # Copy texture
+        # Copy texture & PBR maps
         texture_file_path = None
+        pbr_files = {}
         if mesh.texture_path and mesh.texture_path.exists():
             shutil.copy(mesh.texture_path, textures_dir / mesh.texture_path.name)
             texture_file_path = f"textures/{mesh.texture_path.name}"
+
+            # Copy sibling PBR maps if present
+            src_tex_dir = mesh.texture_path.parent
+            base_stem = mesh.texture_path.stem.replace("_diffuse", "").replace("_albedo", "")
+            for map_name in ["normal", "roughness", "metallic", "ao", "orm"]:
+                cand = src_tex_dir / f"{base_stem}_{map_name}.png"
+                if cand.exists():
+                    shutil.copy(cand, textures_dir / cand.name)
+                    pbr_files[map_name] = f"textures/{cand.name}"
         else:
             print(f"Warning: Texture file not found {mesh.texture_path}")
             
@@ -97,6 +107,7 @@ def export_project(
             "stl_file": stl_file_path,
             "glb_file": glb_file_path,
             "texture_file": texture_file_path,
+            "pbr_material_maps": pbr_files if pbr_files else None,
             "centroid_3d": list(mesh.centroid_3d),
         }
         

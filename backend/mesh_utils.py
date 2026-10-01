@@ -44,6 +44,10 @@ def trimesh_to_viewer_data(
     layer_id: str = "",
     dimensions_mm: tuple[float, float, float] | None = None,
     texture_path: Path | str | None = None,
+    normal_map_path: Path | str | None = None,
+    roughness_map_path: Path | str | None = None,
+    metallic_map_path: Path | str | None = None,
+    ao_map_path: Path | str | None = None,
 ) -> dict:
     """Convert a trimesh object to a dict suitable for embedding in Three.js HTML.
     
@@ -55,9 +59,14 @@ def trimesh_to_viewer_data(
         layer_id: Identifier string for the layer.
         dimensions_mm: Optional (W, H, D) dimensions in mm.
         texture_path: Optional path to diffuse texture image file.
+        normal_map_path: Optional path to tangent-space normal map.
+        roughness_map_path: Optional path to roughness map.
+        metallic_map_path: Optional path to metallic map.
+        ao_map_path: Optional path to ambient occlusion map.
         
     Returns:
         Dict with keys: vertices, faces, color, vertexColors, uvs, textureDataUri,
+        normalMapDataUri, roughnessMapDataUri, metalnessMapDataUri, aoMapDataUri,
         basePosition, explosionDir, layerId, dimensionsMm.
     """
     vertices = mesh.vertices.flatten().tolist()
@@ -78,18 +87,42 @@ def trimesh_to_viewer_data(
         if len(uvs) == len(mesh.vertices) and uvs.ndim == 2 and uvs.shape[1] == 2:
             uv_list = uvs.astype(np.float32).flatten().tolist()
 
-    # Base64 encode texture data URI for embedded Three.js rendering
-    texture_data_uri = None
-    if texture_path is not None:
-        p = Path(texture_path)
+    def _to_data_uri(file_path: Path | str | None) -> str | None:
+        if file_path is None:
+            return None
+        p = Path(file_path)
         if p.exists():
             import base64
             try:
                 with open(p, "rb") as f:
                     b64 = base64.b64encode(f.read()).decode("ascii")
-                    texture_data_uri = f"data:image/png;base64,{b64}"
+                    return f"data:image/png;base64,{b64}"
             except Exception:
                 pass
+        return None
+
+    # Base64 encode texture data URI for embedded Three.js rendering
+    texture_data_uri = _to_data_uri(texture_path)
+
+    # Resolve PBR maps (explicit or auto-detect sibling files)
+    def _find_sibling(suffix: str) -> Path | None:
+        if texture_path is None:
+            return None
+        tp = Path(texture_path)
+        # e.g., layer_01_diffuse.png -> layer_01_normal.png
+        base_stem = tp.stem.replace("_diffuse", "").replace("_albedo", "")
+        cand1 = tp.parent / f"{base_stem}_{suffix}.png"
+        if cand1.exists():
+            return cand1
+        cand2 = tp.parent / f"{tp.stem}_{suffix}.png"
+        if cand2.exists():
+            return cand2
+        return None
+
+    normal_data_uri = _to_data_uri(normal_map_path or _find_sibling("normal"))
+    roughness_data_uri = _to_data_uri(roughness_map_path or _find_sibling("roughness"))
+    metallic_data_uri = _to_data_uri(metallic_map_path or _find_sibling("metallic"))
+    ao_data_uri = _to_data_uri(ao_map_path or _find_sibling("ao"))
 
     hex_color = "#{:02x}{:02x}{:02x}".format(color[0], color[1], color[2])
     
@@ -100,6 +133,10 @@ def trimesh_to_viewer_data(
         "vertexColors": vertex_colors_list,
         "uvs": uv_list,
         "textureDataUri": texture_data_uri,
+        "normalMapDataUri": normal_data_uri,
+        "roughnessMapDataUri": roughness_data_uri,
+        "metalnessMapDataUri": metallic_data_uri,
+        "aoMapDataUri": ao_data_uri,
         "basePosition": list(base_position),
         "explosionDir": list(explosion_direction),
         "layerId": layer_id,

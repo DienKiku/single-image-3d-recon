@@ -389,7 +389,13 @@ def create_depth_mesh(
                     x_mm = raw_x * (target_w / 2.0) / raw_half_w if raw_half_w > 1e-6 else 0.0
                     y_mm = raw_y * (target_h / 2.0) / raw_half_h if raw_half_h > 1e-6 else 0.0
 
-                    zb = back_z
+                    # Ergonomic CAD rear chassis contouring (chamfer falloff towards outer perimeter)
+                    nx = (px - cx_px) / max(1.0, poly_span_x * 0.5)
+                    ny = (cy_px - py) / max(1.0, poly_span_y * 0.5)
+                    r_norm = float(np.sqrt(nx * nx + ny * ny))
+                    chamfer = float(np.clip((r_norm - 0.65) / 0.35, 0.0, 1.0) ** 2)
+                    rear_bevel = -relief_depth * 0.12 * chamfer
+                    zb = back_z + rear_bevel
 
                     v_front.append([x_mm, y_mm, zf])
                     v_back.append([x_mm, y_mm, zb])
@@ -417,7 +423,13 @@ def create_depth_mesh(
                     x = xs[c]
                     y = ys[r]
                     zf = sculpted_depth[r, c]
-                    zb = z_min - base_depth_ratio
+
+                    nx = x / (aspect_ratio * 0.5) if aspect_ratio > 1e-4 else 0.0
+                    ny = y / 0.5
+                    r_norm = float(np.sqrt(nx * nx + ny * ny))
+                    chamfer = float(np.clip((r_norm - 0.65) / 0.35, 0.0, 1.0) ** 2)
+                    rear_bevel = -depth_scale * 0.12 * chamfer
+                    zb = z_min - base_depth_ratio + rear_bevel
 
                     v_front.append([x, y, zf])
                     v_back.append([x, y, zb])
@@ -858,10 +870,27 @@ def export_textured_obj(
     # Save texture PNG
     Image.fromarray(texture_image).save(output_texture_path)
 
+    # Bake and save complete PBR suite (Normal, Roughness, Metallic, AO, ORM)
+    pbr_mtl_lines = []
+    try:
+        from backend.pbr_baker import PBRBaker
+        pbr_maps = PBRBaker.bake_pbr_maps(texture_image)
+        PBRBaker.save_pbr_maps(pbr_maps, output_texture_path.parent, layer_id)
+        pbr_mtl_lines.extend([
+            f"norm ../textures/{layer_id}_normal.png",
+            f"map_Bump ../textures/{layer_id}_normal.png",
+            f"map_Pr ../textures/{layer_id}_roughness.png",
+            f"map_Pm ../textures/{layer_id}_metallic.png",
+        ])
+    except Exception as e:
+        print(f"[Notice] PBR map generation notice: {e}")
+
+    extra_pbr = ("\n" + "\n".join(pbr_mtl_lines)) if pbr_mtl_lines else ""
+
     # Create MTL file
     mtl_path = output_obj_path.with_suffix(".mtl")
     rel_tex_path = f"../textures/{output_texture_path.name}"
-    mtl_content = f"""# Material for {layer_id}
+    mtl_content = f"""# Physically Based Rendering (PBR) Material for {layer_id}
 newmtl {layer_id}_material
 Ka 1.0 1.0 1.0
 Kd 1.0 1.0 1.0
@@ -869,7 +898,7 @@ Ks 0.1 0.1 0.1
 Ns 10.0
 d 1.0
 illum 2
-map_Kd {rel_tex_path}
+map_Kd {rel_tex_path}{extra_pbr}
 """
     mtl_path.write_text(mtl_content, encoding="utf-8")
 

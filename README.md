@@ -84,10 +84,10 @@ $$
 - Uses $k$-d Tree spatial queries (`scipy.spatial.cKDTree`) to transfer neural vertex colors onto the decimated vertices in under 5 milliseconds.
 
 ### 5. Multi-Format Industrial Export
-- **`.glb` (glTF 2.0 Binary):** Complete standalone 3D asset with embedded PBR materials, normal vectors, and high-resolution texture map for Web, AR, Unity, and Unreal Engine.
-- **`.obj` + `.mtl`:** Wavefront OBJ format referencing local diffuse PNG maps (`map_Kd`).
+- **`.glb` (glTF 2.0 Binary):** Complete standalone 3D asset with embedded standard glTF 2.0 PBR materials (`PBRMaterial`: Base Color, Tangent-Space Normal Map, packed ORM texture), normal vectors, and high-resolution texture map for Web, AR, Unity, and Unreal Engine.
+- **`.obj` + `.mtl`:** Wavefront OBJ format referencing local diffuse PNG maps (`map_Kd`), normal maps (`norm`, `map_Bump`), roughness (`map_Pr`), and metallic (`map_Pm`).
 - **`.stl`:** Watertight solid triangle mesh ready for slicers (Cura, PrusaSlicer, Bambu Studio) and additive manufacturing.
-- **`.zip` Bundle:** Automated packaging containing all 3D formats, texture maps, and `project_metadata.json`.
+- **`.zip` Bundle:** Automated packaging containing all 3D formats, complete PBR texture suite (`_albedo.png`, `_normal.png`, `_roughness.png`, `_metallic.png`, `_ao.png`, `_orm.png`), and `project_metadata.json`.
 
 ### 6. Watertight Multi-Layer Exploded Assembly & Natural Seam Detection
 - **Analytical Planar Slicing (`cap=True`):** Replaces naive discrete vertex filtering with exact computational geometry planes (`slice_mesh_plane`). Automatically generates planar capping polygons, ensuring every sliced component is a **100% watertight solid CAD component (`is_watertight: True`)** free of sawtooth or jagged edge artifacts.
@@ -98,8 +98,16 @@ $$
 ### 7. Interactive Three.js Web Studio
 - **🎨 Studio Clay Mode:** Smooth off-white CAD shading highlighting physical contours, fillets, and bevels.
 - **🖼️ Real Photo Texture Mode:** Optical texture rendering with **16x Anisotropic Filtering** and linear mipmapping for crisp text viewing.
+- **💎 PBR Realistic Mode:** Physically Based Rendering inspecting full 6-channel material response (Delighted Albedo, Normal map bumps, Roughness variation, Metallic reflections, Ambient Occlusion contact shadows).
 - **📐 Wireframe Overlay:** Structural triangle mesh density and topology inspector.
 - **💥 Multi-Axis Exploded View:** Real-time $0\% - 100\%$ interactive separation slider with strict axial kinematics. At $0\%$, layers form an air-tight, seamless CAD assembly; at $>0\%$, layers separate cleanly along the chosen axis.
+
+### 8. 100% Local PBR Baking Engine & Industrial Rear Chassis Synthesis
+- **Delighting & Albedo Extraction:** Uses guided bilateral filtering on luminance to suppress harsh directional shadows while preserving sharp optical pigments and text.
+- **Tangent-Space Normal Map:** Computes surface curvature via multi-scale Sobel derivatives ($3\times3$ and $5\times5$) for tactile micro-relief.
+- **Roughness & Metallic Classification:** Automatically isolates specular points (screens, polished glass $\to 0.15 - 0.25$) from matte casings ($\to 0.65 - 0.80$), and detects metallic conductors (screws, chrome, copper $\to 0.85 - 1.0$) vs dielectric polymers.
+- **Dual-Hemisphere UV Atlas Architecture:** Front hemisphere ($N_z \ge 0$) maps original photo details; rear hemisphere ($N_z < 0$) synthesizes an industrial rear chassis panel with ventilation slats, perimeter chamfers, and corner mounting screw bosses.
+- **Ergonomic CAD Rear Beveling:** Replaces flat cutoffs with volumetric chamfer curves ($\Delta z \propto \text{clamp}(r - 0.65)^2$) for physical rigidity in 3D printing.
 
 ---
 

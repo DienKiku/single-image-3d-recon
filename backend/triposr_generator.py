@@ -218,48 +218,66 @@ class TripoSRGenerator(BaseMeshGenerator):
         xc = (x.min() + x.max()) / 2.0
         yc = (y.min() + y.max()) / 2.0
         L = max(x.max() - x.min(), y.max() - y.min(), 1e-5)
+        from backend.pbr_baker import PBRBaker
 
+        # Dual-Hemisphere UV Atlas Architecture:
+        # - Left Half [0.0, 0.5]: Crystal-clear front optical photo texture
+        # - Right Half [0.5, 1.0]: High-Resolution Industrial Chassis Rear Panel with
+        #   ventilation slats, perimeter chamfers, mounting screws, and polymer micro-grain
         u_proj = np.clip(0.5 + (x - xc) / L * self.foreground_ratio, 0.0, 1.0)
         v_proj = np.clip(0.5 + (y - yc) / L * self.foreground_ratio, 0.0, 1.0)
 
-        # Weight front vs back by Z normal:
-        # Front surface (Nz > -0.15) displays the crystal-clear photo texture
-        # Back surface (Nz < -0.15) transitions to the solid body color margin
+        u_front = u_proj * 0.5
+        u_back = 0.5 + (1.0 - u_proj) * 0.5
+
         nz = cad_mesh.vertex_normals[:, 2]
-        w_front = np.clip((nz + 0.15) / 0.25, 0.0, 1.0)
-        u_final = w_front * u_proj + (1.0 - w_front) * 0.02
-        v_final = w_front * v_proj + (1.0 - w_front) * 0.98
+        w_front = np.clip((nz + 0.15) / 0.30, 0.0, 1.0)
+        u_final = w_front * u_front + (1.0 - w_front) * u_back
+        v_final = v_proj
         uvs = np.column_stack([u_final, v_final]).astype(np.float32)
 
-        # Sample dominant body color to fill the texture margin [0:20, 0:20]
-        tex_arr = np.array(processed_pil).copy()
+        # Detect dominant body color for rear chassis
         try:
             if isinstance(image, np.ndarray) and image.ndim == 3:
                 fg_p = image.reshape(-1, image.shape[-1])
                 if image.shape[-1] == 4:
                     fg_p = fg_p[fg_p[:, 3] > 60, :3]
-                if len(fg_p) > 0:
-                    body_color = np.median(fg_p, axis=0).astype(np.uint8)
-                else:
-                    body_color = np.array([60, 60, 70], dtype=np.uint8)
+                body_color = np.median(fg_p, axis=0).astype(np.uint8) if len(fg_p) > 0 else np.array([60, 60, 70], dtype=np.uint8)
             elif isinstance(image, Image.Image):
                 arr_im = np.array(image.convert("RGBA"))
                 fg_p = arr_im.reshape(-1, 4)
                 fg_p = fg_p[fg_p[:, 3] > 60, :3]
-                if len(fg_p) > 0:
-                    body_color = np.median(fg_p, axis=0).astype(np.uint8)
-                else:
-                    body_color = np.array([60, 60, 70], dtype=np.uint8)
+                body_color = np.median(fg_p, axis=0).astype(np.uint8) if len(fg_p) > 0 else np.array([60, 60, 70], dtype=np.uint8)
             else:
                 body_color = np.array([60, 60, 70], dtype=np.uint8)
         except Exception:
             body_color = np.array([60, 60, 70], dtype=np.uint8)
 
-        tex_arr[:20, :20, :3] = body_color[:3]
-        final_tex = Image.fromarray(tex_arr)
-        self.last_texture = final_tex
+        # Synthesize High-Resolution Industrial Rear Panel
+        rear_dict = PBRBaker.generate_rear_chassis_textures(
+            dominant_color=tuple(int(c) for c in body_color[:3]),
+            size=(512, 512),
+        )
 
-        cad_mesh.visual = trimesh.visual.TextureVisuals(uv=uvs, image=final_tex)
+        # Construct Unified Dual-Hemisphere Canvas (1024x512)
+        atlas_img = Image.new("RGB", (1024, 512))
+        front_crop = processed_pil.resize((512, 512), Image.Resampling.LANCZOS).convert("RGB")
+        atlas_img.paste(front_crop, (0, 0))
+        atlas_img.paste(rear_dict["albedo"], (512, 0))
+
+        # Bake full 6-channel PBR material suite
+        pbr_maps = PBRBaker.bake_pbr_maps(atlas_img, target_size=(1024, 512))
+        self.last_texture = pbr_maps["albedo"]
+        self.last_pbr_maps = pbr_maps
+
+        pbr_mat = trimesh.visual.material.PBRMaterial(
+            baseColorTexture=pbr_maps["albedo"],
+            normalTexture=pbr_maps["normal"],
+            roughnessFactor=0.80,
+            metallicFactor=0.10,
+            doubleSided=True,
+        )
+        cad_mesh.visual = trimesh.visual.TextureVisuals(uv=uvs, material=pbr_mat, image=pbr_maps["albedo"])
         return cad_mesh
 
     def generate(
@@ -273,6 +291,7 @@ class TripoSRGenerator(BaseMeshGenerator):
     ) -> GeneratedMesh:
         """Standard BaseMeshGenerator interface returning GeneratedMesh with STL, GLB, OBJ."""
         from backend.sf3d_pipeline import AssetExporter3D
+        from backend.pbr_baker import PBRBaker
 
         tri_mesh = self.run_image(layer_image, target_dimensions_mm=target_dimensions_mm)
         aligned_mesh = AssetExporter3D.align_to_ground(tri_mesh, target_dimensions_mm=target_dimensions_mm)
@@ -285,17 +304,26 @@ class TripoSRGenerator(BaseMeshGenerator):
         obj_path = meshes_dir / f"{layer_id}.obj"
         texture_path = textures_dir / f"{layer_id}_diffuse.png"
 
-        # Save processed texture
-        prep_img = self.preprocess_image(layer_image)
-        prep_img.save(texture_path)
+        # Save processed diffuse / albedo texture
+        if hasattr(self, "last_texture") and self.last_texture is not None:
+            self.last_texture.save(texture_path)
+        else:
+            prep_img = self.preprocess_image(layer_image)
+            prep_img.save(texture_path)
 
-        # Export multi-format
+        # Save complete PBR suite (Normal, Roughness, Metallic, AO, ORM)
+        pbr_saved = {}
+        if hasattr(self, "last_pbr_maps") and self.last_pbr_maps is not None:
+            pbr_saved = PBRBaker.save_pbr_maps(self.last_pbr_maps, textures_dir, layer_id)
+
+        # Export multi-format with full PBR attachments
         AssetExporter3D.export_all(
             mesh=aligned_mesh,
             output_dir=meshes_dir,
             base_name=layer_id,
             target_dimensions_mm=target_dimensions_mm,
             texture_path=texture_path,
+            pbr_maps=self.last_pbr_maps if hasattr(self, "last_pbr_maps") else None,
         )
 
         dim_mm = tuple(float(x) for x in aligned_mesh.extents)

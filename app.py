@@ -267,12 +267,18 @@ def main():
                     tex_path = textures_dir / f"{lid}_diffuse.png"
                     processed_tex.save(tex_path)
 
+                    # Bake and save complete 6-channel PBR material suite
+                    from backend.pbr_baker import PBRBaker
+                    pbr_maps = PBRBaker.bake_pbr_maps(processed_tex)
+                    PBRBaker.save_pbr_maps(pbr_maps, textures_dir, lid)
+
                     AssetExporter3D.export_all(
                         mesh=sub_m,
                         output_dir=meshes_dir,
                         base_name=lid,
                         target_dimensions_mm=None,
                         texture_path=tex_path,
+                        pbr_maps=pbr_maps,
                     )
                     dim_m = tuple(float(x) for x in sub_m.extents)
                     generated_meshes.append(GeneratedMesh(
@@ -291,12 +297,17 @@ def main():
                 tex_path = textures_dir / f"{lid}_diffuse.png"
                 processed_tex.save(tex_path)
 
+                from backend.pbr_baker import PBRBaker
+                pbr_maps = PBRBaker.bake_pbr_maps(processed_tex)
+                PBRBaker.save_pbr_maps(pbr_maps, textures_dir, lid)
+
                 AssetExporter3D.export_all(
                     mesh=aligned_full,
                     output_dir=meshes_dir,
                     base_name=lid,
                     target_dimensions_mm=target_dim,
                     texture_path=tex_path,
+                    pbr_maps=pbr_maps,
                 )
                 dim_m = tuple(float(x) for x in aligned_full.extents)
                 generated_meshes = [GeneratedMesh(

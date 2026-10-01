@@ -244,6 +244,7 @@ def generate_viewer_with_meshes_html(
             <div style="display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; margin-bottom: 4px;">
                 <button id="btn-mode-clay" class="hud-btn active">🎨 Studio Clay</button>
                 <button id="btn-mode-textured" class="hud-btn">🖼️ Ảnh thật</button>
+                <button id="btn-mode-pbr" class="hud-btn">💎 PBR Chân thực</button>
                 <button id="btn-mode-wireframe" class="hud-btn">📐 Lưới</button>
             </div>
             <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15);">
@@ -386,10 +387,72 @@ def generate_viewer_with_meshes_html(
                     }});
                 }}
                 
+                // 3. Physically Based Rendering (PBR) Material with Micro-Surface Normal, Roughness, Metalness & AO
+                let pbrMaterial;
+                if (data.textureDataUri && data.uvs && data.uvs.length > 0) {{
+                    const texLoader = new THREE.TextureLoader();
+                    const diffTex = texLoader.load(data.textureDataUri);
+                    diffTex.colorSpace = THREE.SRGBColorSpace;
+                    diffTex.minFilter = THREE.LinearMipmapLinearFilter;
+                    diffTex.magFilter = THREE.LinearFilter;
+                    diffTex.generateMipmaps = true;
+                    if (renderer.capabilities) {{
+                        diffTex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+                    }}
+
+                    const pbrParams = {{
+                        map: diffTex,
+                        roughness: 0.80,
+                        metalness: 0.05,
+                        side: THREE.DoubleSide
+                    }};
+
+                    if (data.normalMapDataUri) {{
+                        const normalTex = texLoader.load(data.normalMapDataUri);
+                        normalTex.minFilter = THREE.LinearMipmapLinearFilter;
+                        normalTex.magFilter = THREE.LinearFilter;
+                        normalTex.generateMipmaps = true;
+                        pbrParams.normalMap = normalTex;
+                        pbrParams.normalScale = new THREE.Vector2(1.2, 1.2);
+                    }}
+
+                    if (data.roughnessMapDataUri) {{
+                        const roughTex = texLoader.load(data.roughnessMapDataUri);
+                        roughTex.minFilter = THREE.LinearMipmapLinearFilter;
+                        roughTex.magFilter = THREE.LinearFilter;
+                        roughTex.generateMipmaps = true;
+                        pbrParams.roughnessMap = roughTex;
+                        pbrParams.roughness = 1.0;
+                    }}
+
+                    if (data.metalnessMapDataUri) {{
+                        const metalTex = texLoader.load(data.metalnessMapDataUri);
+                        metalTex.minFilter = THREE.LinearMipmapLinearFilter;
+                        metalTex.magFilter = THREE.LinearFilter;
+                        metalTex.generateMipmaps = true;
+                        pbrParams.metalnessMap = metalTex;
+                        pbrParams.metalness = 1.0;
+                    }}
+
+                    if (data.aoMapDataUri) {{
+                        const aoTex = texLoader.load(data.aoMapDataUri);
+                        aoTex.minFilter = THREE.LinearMipmapLinearFilter;
+                        aoTex.magFilter = THREE.LinearFilter;
+                        aoTex.generateMipmaps = true;
+                        pbrParams.aoMap = aoTex;
+                        pbrParams.aoMapIntensity = 1.0;
+                    }}
+
+                    pbrMaterial = new THREE.MeshStandardMaterial(pbrParams);
+                }} else {{
+                    pbrMaterial = texturedMaterial;
+                }}
+
                 // Default to Clay Material (Crisp 3D form shading just like reference model)
                 const mesh = new THREE.Mesh(geometry, clayMaterial);
                 mesh.userData.clayMaterial = clayMaterial;
                 mesh.userData.texturedMaterial = texturedMaterial;
+                mesh.userData.pbrMaterial = pbrMaterial;
                 mesh.userData.basePosition = new THREE.Vector3(...data.basePosition);
                 mesh.userData.explosionDir = new THREE.Vector3(...data.explosionDir);
                 mesh.userData.layerId = data.layerId;
@@ -523,21 +586,29 @@ def generate_viewer_with_meshes_html(
 
             const btnClay = document.getElementById('btn-mode-clay');
             const btnTextured = document.getElementById('btn-mode-textured');
+            const btnPbr = document.getElementById('btn-mode-pbr');
             const btnWireframe = document.getElementById('btn-mode-wireframe');
 
             function applyShader(mode) {{
                 currentShader = mode;
                 userMeshes.forEach(mesh => {{
-                    const mat = (mode === 'clay') ? mesh.userData.clayMaterial : mesh.userData.texturedMaterial;
+                    let mat = mesh.userData.clayMaterial;
+                    if (mode === 'textured') {{
+                        mat = mesh.userData.texturedMaterial;
+                    }} else if (mode === 'pbr') {{
+                        mat = mesh.userData.pbrMaterial || mesh.userData.texturedMaterial;
+                    }}
                     mat.wireframe = isWireframe;
                     mesh.material = mat;
                 }});
                 if (btnClay) btnClay.className = (mode === 'clay') ? 'hud-btn active' : 'hud-btn';
                 if (btnTextured) btnTextured.className = (mode === 'textured') ? 'hud-btn active' : 'hud-btn';
+                if (btnPbr) btnPbr.className = (mode === 'pbr') ? 'hud-btn active' : 'hud-btn';
             }}
 
             btnClay?.addEventListener('click', () => applyShader('clay'));
             btnTextured?.addEventListener('click', () => applyShader('textured'));
+            btnPbr?.addEventListener('click', () => applyShader('pbr'));
             btnWireframe?.addEventListener('click', () => {{
                 isWireframe = !isWireframe;
                 if (btnWireframe) btnWireframe.className = isWireframe ? 'hud-btn active' : 'hud-btn';

@@ -503,10 +503,11 @@ class AssetExporter3D:
         base_name: str = "model",
         target_dimensions_mm: Optional[Tuple[float, float, float]] = None,
         texture_path: Optional[Path] = None,
+        pbr_maps: Optional[Dict[str, Union[Path, Image.Image]]] = None,
     ) -> Dict[str, Path]:
-        """Export the 3D model into OBJ, MTL, STL, and GLB formats.
+        """Export the 3D model into OBJ, MTL, STL, and GLB formats with full PBR maps.
         
-        GLB export uses `include_normals=True` matching SF3D run.py.
+        GLB export uses standard glTF 2.0 PBRMaterial (Base Color, Normal Map, ORM).
         """
         output_dir.mkdir(parents=True, exist_ok=True)
         aligned_mesh = mesh.copy()  # Already aligned by generate(); skip double scaling
@@ -521,7 +522,28 @@ class AssetExporter3D:
         except Exception as e:
             print(f"[Warning] STL export failed: {e}")
 
-        # 2. GLB Export (Standard SF3D export with normals and embedded texture)
+        # 2. Attach PBR Material for GLB Export if available
+        if pbr_maps is not None:
+            try:
+                albedo_tex = pbr_maps.get("albedo")
+                normal_tex = pbr_maps.get("normal")
+                orm_tex = pbr_maps.get("orm")
+                if albedo_tex is not None or normal_tex is not None:
+                    pbr_mat = trimesh.visual.material.PBRMaterial(
+                        baseColorTexture=albedo_tex,
+                        normalTexture=normal_tex,
+                        metallicRoughnessTexture=orm_tex,
+                        roughnessFactor=0.80,
+                        metallicFactor=0.10,
+                        doubleSided=True,
+                    )
+                    uv = aligned_mesh.visual.uv if (hasattr(aligned_mesh, "visual") and hasattr(aligned_mesh.visual, "uv")) else None
+                    if uv is not None:
+                        aligned_mesh.visual = trimesh.visual.TextureVisuals(uv=uv, material=pbr_mat)
+            except Exception as pbr_err:
+                print(f"[Warning] Binding PBRMaterial to mesh failed: {pbr_err}")
+
+        # 3. GLB Export (glTF 2.0 Binary with normals and embedded PBR textures)
         glb_path = output_dir / f"{base_name}.glb"
         try:
             aligned_mesh.export(str(glb_path), include_normals=True)
@@ -533,14 +555,34 @@ class AssetExporter3D:
             except Exception as e:
                 print(f"[Warning] GLB export failed: {e}")
 
-        # 3. OBJ & MTL Export
+        # 4. OBJ & MTL Export with PBR map references
         obj_path = output_dir / f"{base_name}.obj"
         mtl_path = output_dir / f"{base_name}.mtl"
         try:
             if texture_path and Path(texture_path).exists():
                 tex_file = Path(texture_path)
                 rel_tex_path = f"../textures/{tex_file.name}"
-                mtl_content = f"""# Material for {base_name}
+                tex_dir = tex_file.parent
+                base_stem = tex_file.stem.replace("_diffuse", "").replace("_albedo", "")
+
+                norm_cand = tex_dir / f"{base_stem}_normal.png"
+                rough_cand = tex_dir / f"{base_stem}_roughness.png"
+                metal_cand = tex_dir / f"{base_stem}_metallic.png"
+
+                pbr_mtl_lines = []
+                if norm_cand.exists():
+                    pbr_mtl_lines.append(f"norm ../textures/{norm_cand.name}")
+                    pbr_mtl_lines.append(f"map_Bump ../textures/{norm_cand.name}")
+                if rough_cand.exists():
+                    pbr_mtl_lines.append(f"map_Pr ../textures/{rough_cand.name}")
+                if metal_cand.exists():
+                    pbr_mtl_lines.append(f"map_Pm ../textures/{metal_cand.name}")
+
+                extra_pbr = "\n".join(pbr_mtl_lines)
+                if extra_pbr:
+                    extra_pbr = "\n" + extra_pbr
+
+                mtl_content = f"""# Physically Based Rendering (PBR) Material for {base_name}
 newmtl {base_name}_material
 Ka 1.0 1.0 1.0
 Kd 1.0 1.0 1.0
@@ -548,7 +590,7 @@ Ks 0.1 0.1 0.1
 Ns 10.0
 d 1.0
 illum 2
-map_Kd {rel_tex_path}
+map_Kd {rel_tex_path}{extra_pbr}
 """
                 mtl_path.write_text(mtl_content, encoding="utf-8")
                 exports["mtl"] = mtl_path
