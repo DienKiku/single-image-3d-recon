@@ -221,14 +221,18 @@ $$
 
 ## Model Construction & Visual Validation Pipeline
 
-To provide rigorous academic insights into the internal state representations and mathematical transformations of the reconstruction pipeline, the following sections document the visual stages captured during model synthesis:
+To provide rigorous academic insights into the internal state representations, physical transformations, and mathematical foundations of the reconstruction engine, the pipeline is evaluated across a **Dual Showcase** architecture:
+1. **Unified Hero Case Study (Stages 1–8):** A continuous end-to-end transformation of a physical **2-cell electromechanical battery holder ($76.0\text{ mm} \times 40.6\text{ mm} \times 20.2\text{ mm}$)** featuring ABS polymer casing, conductive steel spring coils, brass contact eyelets, and polarity leads. The exact same physical object is traced through every single stage from raw uncalibrated capture to watertight CAD assembly.
+2. **In-The-Wild Industrial Benchmark (Stage 9):** A large-scale multifunction office photocopier ($587\text{ mm} \times 1020\text{ mm} \times 685\text{ mm}$) evaluated in a complex, unconstrained environment (kitchenette/pantry with reflective glass windows, stainless steel sink, cabinetry, and floor cables) to demonstrate salient segmentation and multi-tier kinematic disassembly.
+
+---
 
 ### Stage 1: Salient Object Segmentation & Canvas Normalization
-The system first isolates the target physical object from unconstrained, cluttered real-world photographic backgrounds using a deep salient boundary network (**U2-Net**). The extracted alpha matte is composited onto a canonical $512 \times 512$ square tensor centered with an 85% bounding box margin and neutral gray padding ($V = 127$). This standardizes camera focal length priors and perspective scales for the downstream Vision Transformer tokenizer.
+The system first isolates the target physical object from unconstrained photographic backgrounds using a deep salient boundary network (**U2-Net**). The extracted alpha matte is composited onto a canonical $512 \times 512$ square tensor centered with an 85% bounding box margin and neutral gray padding ($V = 127$). Monocular depth estimation reveals the deep inner battery cavity relief and protruding spring coils.
 
 ![Figure 1: Salient Object Extraction & Canvas Normalization Pipeline](docs/images/fig1_input_preprocessing_pipeline.png)
 
-*Figure 1: Visual breakdown of the input preprocessing pipeline. (a) Raw input photograph in a complex office environment. (b) High-precision foreground segmentation via U2-Net alpha matte. (c) Canonical $512 \times 512$ centered neural input canvas with neutral padding.*
+*Figure 1: Visual breakdown of the input preprocessing pipeline on the 2-cell battery holder ($76\text{ mm} \times 41\text{ mm}$). (a) Raw input photograph with mechanical dimension annotations and wiring. (b) High-precision foreground alpha matte isolating chassis and electrical terminals. (c) Metric monocular depth map revealing the inner cavity gradient and spring coil relief. (d) Canonical $512 \times 512$ centered neural input canvas with neutral padding.*
 
 ---
 
@@ -237,7 +241,7 @@ The continuous neural field density $\sigma(\mathbf{x})$ is queried across the c
 
 ![Figure 2: Spatial Coordinate Distribution and Multi-Plane Projection Analysis](docs/images/fig2_spatial_coordinate_analysis.png)
 
-*Figure 2: Orthogonal and perspective projections of the extracted 3D spatial coordinate field, verifying continuous density boundaries and geometric symmetry across all 6 viewing projections.*
+*Figure 2: Orthogonal and perspective projections of the extracted 3D spatial coordinate field of the battery holder, verifying continuous density boundaries, cavity relief ($Z \in [-19.7, 0.4]\text{ mm}$), and geometric symmetry across all 6 viewing projections.*
 
 ---
 
@@ -246,7 +250,7 @@ Following Marching Cubes isosurface extraction at $256^3$ grid resolution, the p
 
 ![Figure 3: Multi-View Omnidirectional Neural 3D Geometry Reconstruction](docs/images/fig3_neural_geometry_multiview.png)
 
-*Figure 3: Shaded 3D surface geometry inspected across 6 discrete camera viewpoints (Front, Isometric 3/4, Side Profile, Top Down, Rear Back, Rear 3/4), highlighting curvature preservation and complete occlusion-free back-surface synthesis.*
+*Figure 3: Shaded 3D surface geometry of the battery holder inspected across 6 discrete camera viewpoints (Front, Isometric 3/4, Side Profile, Top Down, Rear Back, Rear 3/4), highlighting curvature preservation, dual-cell partition walls, and complete occlusion-free back-surface synthesis.*
 
 ---
 
@@ -255,16 +259,16 @@ To overcome the blurriness of low-frequency neural vertex colors, the system cas
 
 ![Figure 4: Normal-Aware Camera-Ray UV Projection & Front/Back Material Disentanglement](docs/images/fig4_texture_uv_projection_disentanglement.png)
 
-*Figure 4: Front and rear perspective comparison of the textured 3D reconstruction. The front face captures sub-millimeter silkscreen typography and electrical connections, while the rear face maintains solid substrate coloration without specular or mirror artifacts.*
+*Figure 4: Front and rear perspective comparison of the textured 3D reconstruction of the battery holder. The front face captures sub-millimeter helical spring coils and electrical connections, while the rear face maintains solid substrate coloration without specular or mirror artifacts.*
 
 ---
 
 ### Stage 5: Quadric Mesh Decimation & Metric CAD Scale Calibration
-Industrial CAD/CAM applications and real-time WebGL engines require clean, simplified surface topologies. The raw Marching Cubes mesh (~105,000 faces) is reduced via quadric error metric decimation to exactly **~20,000 faces** while preserving sharp edges and mechanical silhouettes. Vertices are subsequently scaled to real-world millimeters ($W \times H \times D$) for downstream fabrication and 3D printing.
+Industrial CAD/CAM applications and real-time WebGL engines require clean, simplified surface topologies. The raw Marching Cubes mesh (~105,000 faces) is reduced via quadric error metric decimation to **14,908 faces** while preserving sharp edges and mechanical silhouettes. Vertices are subsequently scaled to real-world millimeters ($76.0\text{ mm} \times 40.6\text{ mm} \times 20.2\text{ mm}$) for downstream fabrication and 3D printing.
 
 ![Figure 5: Metric CAD Alignment & Quadric Decimation Wireframe Topology](docs/images/fig5_cad_metric_calibration_wireframe.png)
 
-*Figure 5: Wireframe topology of the calibrated 20,000-face mesh across perspective, front, and side elevations, demonstrating uniform polygon density and strict metric alignment.*
+*Figure 5: Wireframe topology of the calibrated CAD mesh across perspective, front, and side elevations, demonstrating uniform polygon density and strict metric alignment ($76.0\text{ mm} \times 40.6\text{ mm} \times 20.2\text{ mm}$).*
 
 ---
 
@@ -273,7 +277,7 @@ To bridge the gap between flat 2D diffuse texturing and photorealistic WebGL/CAD
 
 ![Figure 6: 6-Channel PBR Material Decomposition & Texture Baking Suite](docs/images/fig6_pbr_material_baking_suite.png)
 
-*Figure 6: Visual breakdown of the 6-channel PBR material baking suite. (a) Raw input photograph with ambient reflections. (b) Delighted Albedo with ambient shadows eliminated. (c) Tangent-space normal map. (d) Roughness map. (e) Metallic mask isolating electrical contacts and fasteners. (f) Packed glTF 2.0 ORM texture.*
+*Figure 6: Visual breakdown of the 6-channel PBR material baking suite on the battery holder. (a) Raw input photograph with ambient reflections. (b) Delighted Albedo with ambient shadows eliminated. (c) Tangent-space normal map. (d) Roughness map distinguishing ABS polymer from steel coils. (e) Metallic mask isolating electrical springs and brass rivets. (f) Packed glTF 2.0 ORM texture.*
 
 ---
 
@@ -291,7 +295,16 @@ To enable mechanical engineering analysis, internal component inspection, and mu
 
 ![Figure 8: Watertight Multi-Layer Exploded Assembly & Natural Seam Detection](docs/images/fig8_watertight_exploded_assembly.png)
 
-*Figure 8: Multi-layer exploded assembly validation. (a) Continuous cross-sectional area profile $A(y)$ with automatically detected natural joint seams. (b) Monolithic solid CAD asset ($0\%$ Exploded, fully sealed watertight mesh). (c) Multi-layer exploded assembly ($50\%$ vertical separation along $Y$-axis). (d) Analytical planar capping polygon (`cap=True`) proving 100% solid watertight volume without internal voids or spikes.*
+*Figure 8: Multi-layer exploded assembly validation on the battery holder. (a) Continuous cross-sectional area profile $A(y)$ with automatically detected natural joint seams. (b) Monolithic solid CAD asset ($0\%$ Exploded, fully sealed watertight mesh). (c) Multi-layer exploded assembly ($50\%$ vertical separation along $Y$-axis). (d) Analytical planar capping polygon (`cap=True`) proving 100% solid watertight volume without internal voids or spikes.*
+
+---
+
+### Stage 9: In-The-Wild Industrial Benchmark Showcase
+To rigorously stress-test the pipeline under adverse, unconstrained real-world operating conditions, an office multifunction copier machine ($587\text{ mm} \times 1020\text{ mm} \times 685\text{ mm}$) was photographed in an unconstrained pantry/kitchenette environment. The scene contains intense environmental challenges: floor-to-ceiling glass windows with harsh backlighting, outdoor greenery, reflective stainless steel sinks and chrome faucets, wooden cabinetry, and floor power cables. The pipeline successfully extracts the salient foreground, estimates metric CAD proportions, reconstructs a 28,004-face solid watertight volume, and executes multi-tier kinematic disassembly separating the automatic document feeder (ADF) scanner lid, control touchscreen console, central toner/printing engine, and paper drawer units.
+
+![Figure 9: In-The-Wild Industrial Benchmark Showcase — Multi-Tier Office Copier Disassembly](docs/images/fig9_in_the_wild_industrial_showcase.png)
+
+*Figure 9: In-The-Wild Industrial Benchmark Showcase on an office multifunction copier. (a) Raw 2D capture in a complex office kitchenette. (b) Salient foreground segmentation isolating copier from sink, cabinetry, and windows. (c) Reconstructed solid CAD geometry standing upright ($587\text{ mm} \times 1020\text{ mm} \times 685\text{ mm}$, 28,004 faces). (d) Multi-tier exploded disassembly separating paper drawers, printing engine, and ADF scanner lid.*
 
 ---
 
@@ -418,6 +431,10 @@ single-image-3d-recon/
 ├── requirements.txt                        # Python dependencies (PyTorch, trimesh, Streamlit, etc.)
 ├── README.md                               # Project documentation & benchmark report
 ├── .gitignore                              # Git ignore rules for virtual environments, outputs, and caches
+├── assets/
+│   └── samples/                            # Reference photographic samples & fiducial test images
+│       ├── hero_battery_holder.png         # Unified Hero Case Study: 2-cell electromechanical battery holder (76x41 mm)
+│       └── hero_office_printer.jpg         # In-the-wild benchmark sample: multifunction office photocopier
 ├── backend/
 │   ├── pbr_baker.py                        # Local 6-channel PBR baking engine & rear chassis synthesizer
 │   ├── triposr_generator.py                # TripoSR 360° Foundation Model engine & UV synthesizer
@@ -439,10 +456,17 @@ single-image-3d-recon/
 ├── config/
 │   └── settings.py                         # Directory paths & pipeline configuration constants
 ├── scripts/
+│   ├── generate_all_figures.py             # Master batch generator for all publication documentation figures (Figs 1-9)
 │   ├── generate_architecture_diagram.py    # High-resolution 200 DPI system architecture diagram generator (Fig 0)
+│   ├── generate_fig1_preprocessing.py      # Salient alpha matte, depth map & canvas normalization generator (Fig 1)
+│   ├── generate_fig2_spatial_analysis.py   # Multi-plane coordinate projections & spatial field generator (Fig 2)
+│   ├── generate_fig3_neural_geometry.py    # Omnidirectional 6-view shaded 3D mesh surface generator (Fig 3)
+│   ├── generate_fig4_texture_projection.py # Camera-ray optical projection & front/back disentanglement generator (Fig 4)
+│   ├── generate_fig5_metric_wireframe.py   # CAD metric alignment & quadric decimation wireframe generator (Fig 5)
 │   ├── generate_fig6_pbr_maps.py           # 6-Channel PBR material baking & delighting generator (Fig 6)
 │   ├── generate_fig7_dual_hemisphere.py    # Dual-Hemisphere UV atlas & rear chassis generator (Fig 7)
 │   ├── generate_fig8_exploded_assembly.py  # Watertight multi-layer exploded assembly generator (Fig 8)
+│   ├── generate_fig9_in_the_wild_showcase.py # In-the-wild complex scene copier benchmark generator (Fig 9)
 │   ├── run_sf3d.py                         # Production CLI pipeline runner for headless asset generation
 │   └── generate_sample_images.py           # Synthetic benchmark and fiducial test image generator
 └── tests/                                  # Automated pytest verification test suite (38 passing tests)

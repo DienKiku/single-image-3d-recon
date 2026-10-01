@@ -79,7 +79,7 @@ Mọi unit test (38/38) đều vượt qua 100%, bao gồm 10 bài test chuyên 
 
 ---
 
-## 5. Nâng Cấp Hệ Thống PBR 6 Kênh 100% Offline & Sơ Đồ Kiến Trúc 5 Giai Đoạn
+## 5. Nâng Cấp Hệ Thống PBR 6 Kênh 100% Offline & Chuẩn Hóa Bộ Hình Minh Họa Đồng Nhất (Dual Showcase)
 
 1. **Bộ Nướng Vật Liệu PBR 6 Kênh Thuần Offline (`backend/pbr_baker.py`):**
    - Tách rời ánh sáng & khử bóng đổ (Bilateral Delighting).
@@ -92,8 +92,17 @@ Mọi unit test (38/38) đều vượt qua 100%, bao gồm 10 bài test chuyên 
 3. **Cập nhật sơ đồ kiến trúc hệ thống (`docs/images/fig0_system_architecture.png`):**
    - Mở rộng từ 4 giai đoạn lên 5 giai đoạn hoàn chỉnh, đối xứng 4 khối mỗi giai đoạn.
    - Phân giải cao 200 DPI ($3180 \times 1980$), tone màu tối chuẩn Studio CAD.
-4. **Bổ sung trọn bộ 3 hình ảnh minh họa quy trình tái tạo độ phân giải cao:**
-   - **Hình 6 ([`docs/images/fig6_pbr_material_baking_suite.png`](file:///d:/2d-to-3d/docs/images/fig6_pbr_material_baking_suite.png)):** Phân rã 6 kênh vật liệu PBR (Ảnh gốc, Albedo Delighting, Tangent Normal Map, Roughness, Metallic, Packed glTF ORM).
-   - **Hình 7 ([`docs/images/fig7_dual_hemisphere_uv_chassis.png`](file:///d:/2d-to-3d/docs/images/fig7_dual_hemisphere_uv_chassis.png)):** Mở trải Dual-Hemisphere UV Atlas 1024x1024 (Mặt trước chiếu quang học $N_z \ge 0$, mặt sau vỏ máy công nghiệp $N_z < 0$).
-   - **Hình 8 ([`docs/images/fig8_watertight_exploded_assembly.png`](file:///d:/2d-to-3d/docs/images/fig8_watertight_exploded_assembly.png)):** Phân tầng bóc tách linh kiện kín nước 100% kèm biểu đồ quét diện tích mặt cắt $A(s)$ phát hiện mối nối tự nhiên $\min |dA/ds|$ và nắp cắt phẳng giải tích (`cap=True`).
-   - Kèm 3 scripts sinh hình tự động: [`scripts/generate_fig6_pbr_maps.py`](file:///d:/2d-to-3d/scripts/generate_fig6_pbr_maps.py), [`scripts/generate_fig7_dual_hemisphere.py`](file:///d:/2d-to-3d/scripts/generate_fig7_dual_hemisphere.py), [`scripts/generate_fig8_exploded_assembly.py`](file:///d:/2d-to-3d/scripts/generate_fig8_exploded_assembly.py).
+4. **Chuẩn Hóa Bộ Hình Minh Họa Theo Mô Hình Dual Showcase (9 Hình Ảnh Kỹ Thuật 200 DPI):**
+   - **Unified Hero Case Study (Hình 1 đến Hình 8):** Sử dụng duy nhất **1 vật mẫu cơ điện tử thực tế** — Hộp đựng pin 2 cell ($76.0\text{ mm} \times 40.6\text{ mm} \times 20.2\text{ mm}$) xuyên suốt toàn bộ vòng đời số hóa từ ảnh 2D thô, mặt nạ tách nền, depth map lòng khay và lò xo, phân bố tọa độ 3D, tái tạo lưới 3D 6 góc nhìn, chiếu UV camera-ray, hiệu chuẩn tỷ xích CAD $76\text{ mm}$, nướng vật liệu PBR 6 kênh, trải UV 2 bán cầu, và bóc tách cụm lắp ráp kín nước 3 tầng.
+   - **In-The-Wild Industrial Benchmark (Hình 9):** Thử nghiệm trên thiết bị văn phòng cỡ lớn (Máy in/photocopy Ricoh đa tầng) chụp trong môi trường thực tế phức tạp (bếp văn phòng có cửa kính, bồn rửa chén, tủ gỗ) để chứng minh khả năng tách nền tiền cảnh vượt trội và bóc tách cụm linh kiện nắp quét ADF, màn hình cảm ứng và các khay giấy.
+   - **Trọn bộ 9 scripts sinh hình độc lập và 1 script tổng hợp:**
+     - [`scripts/generate_all_figures.py`](file:///d:/2d-to-3d/scripts/generate_all_figures.py): Tự động render toàn bộ Figure 1 đến Figure 9.
+     - [`scripts/generate_fig1_preprocessing.py`](file:///d:/2d-to-3d/scripts/generate_fig1_preprocessing.py) (Figure 1: Preprocessing & Depth).
+     - [`scripts/generate_fig2_spatial_analysis.py`](file:///d:/2d-to-3d/scripts/generate_fig2_spatial_analysis.py) (Figure 2: Spatial Projections).
+     - [`scripts/generate_fig3_neural_geometry.py`](file:///d:/2d-to-3d/scripts/generate_fig3_neural_geometry.py) (Figure 3: Neural 3D Geometry).
+     - [`scripts/generate_fig4_texture_projection.py`](file:///d:/2d-to-3d/scripts/generate_fig4_texture_projection.py) (Figure 4: Camera Ray UV & Disentanglement).
+     - [`scripts/generate_fig5_metric_wireframe.py`](file:///d:/2d-to-3d/scripts/generate_fig5_metric_wireframe.py) (Figure 5: Metric CAD Wireframe).
+     - [`scripts/generate_fig6_pbr_maps.py`](file:///d:/2d-to-3d/scripts/generate_fig6_pbr_maps.py) (Figure 6: 6-Channel PBR Baking).
+     - [`scripts/generate_fig7_dual_hemisphere.py`](file:///d:/2d-to-3d/scripts/generate_fig7_dual_hemisphere.py) (Figure 7: Dual-Hemisphere UV Atlas).
+     - [`scripts/generate_fig8_exploded_assembly.py`](file:///d:/2d-to-3d/scripts/generate_fig8_exploded_assembly.py) (Figure 8: Watertight Exploded Assembly).
+     - [`scripts/generate_fig9_in_the_wild_showcase.py`](file:///d:/2d-to-3d/scripts/generate_fig9_in_the_wild_showcase.py) (Figure 9: In-The-Wild Industrial Benchmark).

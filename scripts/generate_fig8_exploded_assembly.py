@@ -14,10 +14,10 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from backend.depth_processor import slice_mesh_into_layers, detect_natural_seams
 
 def generate_fig8():
-    # Load sample watertight mesh
-    mesh_path = Path("output/test_unified_printer.obj")
+    # Load sample watertight mesh (Hero Battery Holder)
+    mesh_path = Path("output/e2e_final_battery.obj")
     if not mesh_path.exists():
-        mesh_path = Path("output/e2e_final_battery.obj")
+        mesh_path = Path("output/test_unified_printer.obj")
     
     mesh = trimesh.load(mesh_path, force="mesh")
     axis = 1  # Vertical Y-axis
