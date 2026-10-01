@@ -92,3 +92,8 @@ Mọi unit test (38/38) đều vượt qua 100%, bao gồm 10 bài test chuyên 
 3. **Cập nhật sơ đồ kiến trúc hệ thống (`docs/images/fig0_system_architecture.png`):**
    - Mở rộng từ 4 giai đoạn lên 5 giai đoạn hoàn chỉnh, đối xứng 4 khối mỗi giai đoạn.
    - Phân giải cao 200 DPI ($3180 \times 1980$), tone màu tối chuẩn Studio CAD.
+4. **Bổ sung trọn bộ 3 hình ảnh minh họa quy trình tái tạo độ phân giải cao:**
+   - **Hình 6 ([`docs/images/fig6_pbr_material_baking_suite.png`](file:///d:/2d-to-3d/docs/images/fig6_pbr_material_baking_suite.png)):** Phân rã 6 kênh vật liệu PBR (Ảnh gốc, Albedo Delighting, Tangent Normal Map, Roughness, Metallic, Packed glTF ORM).
+   - **Hình 7 ([`docs/images/fig7_dual_hemisphere_uv_chassis.png`](file:///d:/2d-to-3d/docs/images/fig7_dual_hemisphere_uv_chassis.png)):** Mở trải Dual-Hemisphere UV Atlas 1024x1024 (Mặt trước chiếu quang học $N_z \ge 0$, mặt sau vỏ máy công nghiệp $N_z < 0$).
+   - **Hình 8 ([`docs/images/fig8_watertight_exploded_assembly.png`](file:///d:/2d-to-3d/docs/images/fig8_watertight_exploded_assembly.png)):** Phân tầng bóc tách linh kiện kín nước 100% kèm biểu đồ quét diện tích mặt cắt $A(s)$ phát hiện mối nối tự nhiên $\min |dA/ds|$ và nắp cắt phẳng giải tích (`cap=True`).
+   - Kèm 3 scripts sinh hình tự động: [`scripts/generate_fig6_pbr_maps.py`](file:///d:/2d-to-3d/scripts/generate_fig6_pbr_maps.py), [`scripts/generate_fig7_dual_hemisphere.py`](file:///d:/2d-to-3d/scripts/generate_fig7_dual_hemisphere.py), [`scripts/generate_fig8_exploded_assembly.py`](file:///d:/2d-to-3d/scripts/generate_fig8_exploded_assembly.py).

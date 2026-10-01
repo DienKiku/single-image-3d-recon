@@ -268,6 +268,33 @@ Industrial CAD/CAM applications and real-time WebGL engines require clean, simpl
 
 ---
 
+### Stage 6: 6-Channel PBR Material Decomposition & Texture Baking
+To bridge the gap between flat 2D diffuse texturing and photorealistic WebGL/CAD rendering, the system executes an offline physics-based material baking engine ([`backend/pbr_baker.py`](file:///d:/2d-to-3d/backend/pbr_baker.py)). Directional ambient shadows are extracted and removed via bilateral luminance filtering to yield a clean Base Color / Albedo map. Surface micro-relief and geometric curvature are extracted using multi-scale Sobel gradients ($3\times3$ and $5\times5$) to compute high-frequency tangent-space normal vectors. Optical saturation and luminance analysis classify surface regions into specular screens/glass ($R \approx 0.20$), matte polymer chassis ($R \approx 0.75$), and conductive metallic terminals ($M \approx 0.90$). Ambient occlusion contact shadows and cavity crevices are baked and packed into the industry-standard glTF 2.0 ORM texture format (Red = AO, Green = Roughness, Blue = Metallic).
+
+![Figure 6: 6-Channel PBR Material Decomposition & Texture Baking Suite](docs/images/fig6_pbr_material_baking_suite.png)
+
+*Figure 6: Visual breakdown of the 6-channel PBR material baking suite. (a) Raw input photograph with ambient reflections. (b) Delighted Albedo with ambient shadows eliminated. (c) Tangent-space normal map. (d) Roughness map. (e) Metallic mask isolating electrical contacts and fasteners. (f) Packed glTF 2.0 ORM texture.*
+
+---
+
+### Stage 7: Dual-Hemisphere UV Atlas & Industrial Rear Chassis Panel Synthesis
+Single-view photographs fundamentally capture only the front-facing perspective ($N_z \ge 0$). Unconstrained ray projections onto occluded rear faces cause mirror bleed-through, duplicate text, or inverted geometry. The pipeline solves this via a **Dual-Hemisphere UV Atlas**: the front hemisphere ($u \in [0.0, 0.5]$) maps high-frequency camera-ray photo textures, while the rear hemisphere ($u \in [0.5, 1.0]$) synthesizes an engineered industrial rear chassis panel complete with horizontal cooling ventilation louvers, perimeter chamfers, 4 corner metallic screw bosses, and a regulatory technical plate.
+
+![Figure 7: Dual-Hemisphere UV Atlas & Industrial Rear Chassis Synthesis](docs/images/fig7_dual_hemisphere_uv_chassis.png)
+
+*Figure 7: Dual-Hemisphere UV Atlas unwrapped at $1024 \times 1024$ resolution. (a) Left: Front camera-ray optical mapping ($N_z \ge 0$); Right: Synthesized industrial rear chassis ($N_z < 0$). (b) Industrial rear chassis panel texture. (c) Multi-scale tangent normal map for rear ventilation slots and screw wells. (d) glTF ORM texture packing contact AO crevices, ABS polymer roughness, and metallic screws.*
+
+---
+
+### Stage 8: Watertight Multi-Layer Exploded Assembly & Natural Seam Detection
+To enable mechanical engineering analysis, internal component inspection, and multi-part 3D printing, the pipeline incorporates an automated exploded disassembly engine ([`backend/depth_processor.py`](file:///d:/2d-to-3d/backend/depth_processor.py)). The object's cross-sectional area profile $A(s)$ is scanned along the chosen kinematics axis ($Y$ or $Z$) to identify natural mechanical boundaries (inflection points and local minima $\arg\min |dA/ds|$). Slicing is executed with analytical planar capping (`cap=True`), which constructs clean triangulated capping polygons across cut boundaries. Every decomposed layer is guaranteed to be a **100% watertight solid CAD component (`is_watertight: True`)** with continuous exterior photographic textures and solid engineered substrate caps.
+
+![Figure 8: Watertight Multi-Layer Exploded Assembly & Natural Seam Detection](docs/images/fig8_watertight_exploded_assembly.png)
+
+*Figure 8: Multi-layer exploded assembly validation. (a) Continuous cross-sectional area profile $A(y)$ with automatically detected natural joint seams. (b) Monolithic solid CAD asset ($0\%$ Exploded, fully sealed watertight mesh). (c) Multi-layer exploded assembly ($50\%$ vertical separation along $Y$-axis). (d) Analytical planar capping polygon (`cap=True`) proving 100% solid watertight volume without internal voids or spikes.*
+
+---
+
 ## Installation & Environment Setup
 
 ### System Prerequisites
@@ -412,7 +439,10 @@ single-image-3d-recon/
 ├── config/
 │   └── settings.py                         # Directory paths & pipeline configuration constants
 ├── scripts/
-│   ├── generate_architecture_diagram.py    # High-resolution 200 DPI system architecture diagram generator
+│   ├── generate_architecture_diagram.py    # High-resolution 200 DPI system architecture diagram generator (Fig 0)
+│   ├── generate_fig6_pbr_maps.py           # 6-Channel PBR material baking & delighting generator (Fig 6)
+│   ├── generate_fig7_dual_hemisphere.py    # Dual-Hemisphere UV atlas & rear chassis generator (Fig 7)
+│   ├── generate_fig8_exploded_assembly.py  # Watertight multi-layer exploded assembly generator (Fig 8)
 │   ├── run_sf3d.py                         # Production CLI pipeline runner for headless asset generation
 │   └── generate_sample_images.py           # Synthetic benchmark and fiducial test image generator
 └── tests/                                  # Automated pytest verification test suite (38 passing tests)
