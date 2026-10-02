@@ -1,0 +1,34 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+env/
+venv/
+.venv/
+ENV/
+
+# Large Model Weights & Checkpoints (Root models/ folder only)
+/models/
+*.ckpt
+*.onnx
+*.safetensors
+*.bin
+*.pth
+*.pt
+
+# Uploads & Outputs (keep directories via .gitkeep)
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

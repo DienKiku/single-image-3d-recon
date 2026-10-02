@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2D → 3D Converter (Local)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#15181d; color:#e8eaed; display:flex; height:100vh; overflow:hidden; }
+  #panel { width:320px; padding:18px; background:#1e232b; overflow-y:auto; border-right:1px solid #2c333d; display:flex; flex-direction:column; gap:10px; }
+  #view  { flex:1; position:relative; }
+  h2 { font-size:16px; margin:0 0 10px; color:#4da3ff; letter-spacing:0.5px; text-transform:uppercase; font-weight:700; }
+  label { display:block; font-size:12px; margin:6px 0 3px; color:#9aa4b2; font-weight:500; }
+  input[type="text"], input[type="number"], select, input[type="file"] { width:100%; padding:8px 10px; border-radius:6px; border:1px solid #39414d; background:#272e38; color:#e8eaed; font-size:13px; outline:none; }
+  input[type="range"] { width:100%; accent-color:#2f7bd6; margin:4px 0; }
+  .checkbox-label { display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#e8eaed; margin:6px 0; }
+  .checkbox-label input[type="checkbox"] { width:auto; cursor:pointer; }
+  .box-section { background:#181c22; padding:12px; border-radius:8px; border:1px solid #282f3a; margin-top:4px; }
+  button#run { width:100%; background:#2f7bd6; color:#ffffff; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:14px; margin-top:14px; padding:12px; transition:background 0.2s; }
+  button#run:hover { background:#256bbd; }
+  button#run:disabled { background:#44505f; cursor:not-allowed; opacity:0.7; }
+  #status { margin-top:8px; font-size:12px; color:#8fd18f; min-height:18px; line-height:1.4; word-break:break-word; }
+  a.dl { display:inline-block; margin-top:10px; padding:8px 12px; background:#1f3d63; border:1px solid #2f7bd6; border-radius:6px; color:#79b8ff; text-decoration:none; font-size:13px; font-weight:500; text-align:center; }
+  a.dl:hover { background:#255085; }
+  .val-badge { float:right; font-weight:600; color:#4da3ff; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h2>Chuyển ảnh 2D sang 3D</h2>
+
+  <div>
+    <label>Ảnh đầu vào</label>
+    <input type="file" id="file" accept="image/*" />
+  </div>
+
+  <div>
+    <label>Chế độ dựng</label>
+    <select id="mode">
+      <option value="full3d">Mô hình 3D đầy đủ 360° (TripoSR)</option>
+      <option value="relief">Phù điêu 2.5D (nhanh)</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Định dạng xuất</label>
+    <select id="format">
+      <option value="glb">GLB (chuẩn, có màu sắc)</option>
+      <option value="obj">OBJ</option>
+      <option value="stl">STL (cho máy in 3D)</option>
+      <option value="ply">PLY</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Thiết bị tính toán</label>
+    <select id="device">
+      <option value="auto">Tự động (CUDA nếu có, ngược lại CPU)</option>
+      <option value="cuda">GPU NVIDIA (CUDA)</option>
+      <option value="cpu">CPU</option>
+    </select>
+  </div>
+
+  <!-- Thiết lập chế độ Full 3D -->
+  <div id="box-full3d" class="box-section">
+    <label>Độ phân giải lưới: <span id="mv" class="val-badge">256</span></label>
+    <input type="range" id="mc_resolution" min="96" max="384" step="32" value="256" />
+
+    <label>Tỉ lệ chủ thể: <span id="fv" class="val-badge">0.85</span></label>
+    <input type="range" id="foreground_ratio" min="0.5" max="1" step="0.05" value="0.85" />
+
+    <label>Giới hạn số mặt (0 = giữ nguyên)</label>
+    <input type="number" id="faces" value="0" step="10000" min="0" />
+
+    <label class="checkbox-label">
+      <input type="checkbox" id="remove_bg" checked /> Tự động tách nền (rembg)
+    </label>
+    <label class="checkbox-label">
+      <input type="checkbox" id="bake_uv" /> Bake UV texture (ảnh map)
+    </label>
+  </div>
+
+  <!-- Thiết lập chế độ Relief 2.5D -->
+  <div id="box-relief" class="box-section" style="display:none">
+    <label>Mô hình độ sâu</label>
+    <select id="model">
+      <option value="MiDaS_small">MiDaS Small (nhanh)</option>
+      <option value="DPT_Hybrid">DPT Hybrid (cân bằng)</option>
+      <option value="DPT_Large">DPT Large (chi tiết cao)</option>
+    </select>
+
+    <label>Độ phân giải lưới: <span id="rv" class="val-badge">512</span></label>
+    <input type="range" id="resolution" min="128" max="1024" step="64" value="512" />
+
+    <label>Độ nổi khối: <span id="dv" class="val-badge">0.35</span></label>
+    <input type="range" id="depth" min="0.05" max="1" step="0.05" value="0.35" />
+
+    <label>Làm mượt: <span id="sv" class="val-badge">3</span></label>
+    <input type="range" id="smooth" min="0" max="15" step="1" value="3" />
+
+    <label class="checkbox-label">
+      <input type="checkbox" id="solid" /> Khối đặc (cho in 3D)
+    </label>
+  </div>
+
+  <button id="run">TẠO MÔ HÌNH 3D</button>
+  <div id="status"></div>
+  <a class="dl" id="dl" style="display:none" download>⬇ Tải file 3D về máy</a>
+</div>
+
+<div id="view"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }   from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader }    from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader }    from 'three/addons/loaders/STLLoader.js';
+import { PLYLoader }    from 'three/addons/loaders/PLYLoader.js';
+
+const view = document.getElementById('view');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101318);
+
+const camera = new THREE.PerspectiveCamera(50, view.clientWidth / view.clientHeight, 0.01, 100);
+camera.position.set(0, 0, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(view.clientWidth, view.clientHeight);
+view.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+dir.position.set(2, 3, 4);
+scene.add(dir);
+const dirBack = new THREE.DirectionalLight(0xffffff, 0.5);
+dirBack.position.set(-2, -3, -4);
+scene.add(dirBack);
+
+scene.add(new THREE.GridHelper(6, 24, 0x344154, 0x222a35));
+
+let current = null;
+
+function fit(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3()).length();
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.sub(center);
+  camera.position.set(0, 0, Math.max(size * 1.3, 1.0));
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+function setModel(obj) {
+  if (current) scene.remove(current);
+  current = obj;
+  scene.add(obj);
+  fit(obj);
+}
+
+function loadModel(url, fmt) {
+  if (fmt === 'glb') {
+    new GLTFLoader().load(url, g => setModel(g.scene));
+  } else if (fmt === 'obj') {
+    new OBJLoader().load(url, o => setModel(o));
+  } else {
+    const L = fmt === 'stl' ? new STLLoader() : new PLYLoader();
+    L.load(url, geo => {
+      geo.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xcfd6e0, vertexColors: !!geo.attributes.color,
+        roughness: 0.75, metalness: 0.05, side: THREE.DoubleSide
+      });
+      setModel(new THREE.Mesh(geo, mat));
+    });
+  }
+}
+
+// --- UI Binding ---
+const $ = id => document.getElementById(id);
+
+// Hiển thị/ẩn tuỳ chọn theo chế độ
+$('mode').onchange = () => {
+  const isFull = $('mode').value === 'full3d';
+  $('box-full3d').style.display = isFull ? 'block' : 'none';
+  $('box-relief').style.display = isFull ? 'none' : 'block';
+};
+
+// Cập nhật giá trị hiển thị cho slider
+$('mc_resolution').oninput = () => $('mv').textContent = $('mc_resolution').value;
+$('foreground_ratio').oninput = () => $('fv').textContent = $('foreground_ratio').value;
+$('resolution').oninput = () => $('rv').textContent = $('resolution').value;
+$('depth').oninput = () => $('dv').textContent = $('depth').value;
+$('smooth').oninput = () => $('sv').textContent = $('smooth').value;
+
+// Xử lý gửi ảnh và nhận mô hình 3D
+$('run').onclick = async () => {
+  const f = $('file').files[0];
+  if (!f) {
+    $('status').style.color = '#ff6b6b';
+    $('status').textContent = '⚠ Hãy chọn ảnh trước khi bắt đầu.';
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('image', f);
+  const mode = $('mode').value;
+  const fmt = $('format').value;
+  fd.append('mode', mode);
+  fd.append('format', fmt);
+  fd.append('device', $('device').value);
+
+  if (mode === 'full3d') {
+    fd.append('mc_resolution', $('mc_resolution').value);
+    fd.append('foreground_ratio', $('foreground_ratio').value);
+    fd.append('faces', $('faces').value);
+    fd.append('remove_bg', $('remove_bg').checked);
+    fd.append('bake_uv', $('bake_uv').checked);
+  } else {
+    fd.append('model', $('model').value);
+    fd.append('resolution', $('resolution').value);
+    fd.append('depth_scale', $('depth').value);
+    fd.append('smooth', $('smooth').value);
+    fd.append('solid', $('solid').checked);
+  }
+
+  $('run').disabled = true;
+  $('status').style.color = '#e0af68';
+  $('status').textContent = '⏳ Đang dựng mô hình 3D, vui lòng đợi trong giây lát...';
+  $('dl').style.display = 'none';
+
+  try {
+    const r = await fetch('/api/convert', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+
+    loadModel(j.url, fmt);
+    $('dl').href = j.url;
+    $('dl').download = j.filename;
+    $('dl').style.display = 'inline-block';
+    $('status').style.color = '#8fd18f';
+    $('status').textContent = `✔ Thành công: ${j.filename} (${j.size})`;
+  } catch (e) {
+    $('status').style.color = '#ff6b6b';
+    $('status').textContent = '✖ Lỗi: ' + e.message;
+  } finally {
+    $('run').disabled = false;
+  }
+};
+
+window.addEventListener('resize', () => {
+  camera.aspect = view.clientWidth / view.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(view.clientWidth, view.clientHeight);
+});
+
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+numpy>=1.24
+opencv-python>=4.8
+Pillow>=10.0
+trimesh>=4.0
+scipy>=1.10
+flask>=3.0
+timm>=0.9
+einops>=0.7
+omegaconf>=2.3
+transformers>=4.35
+huggingface-hub>=0.23
+rembg>=2.0
+onnxruntime>=1.16
+scikit-image>=0.22
+pymeshlab>=2023.12
+fast_simplification>=0.2.0
+# Lưu ý trên Windows: PyMCubes và xatlas yêu cầu C++ Build Tools.
+# mc_fallback.py dùng scikit-image để không cần PyMCubes hay torchmcubes.
+# PyMCubes>=0.1.4
+# xatlas>=0.0.9
